@@ -1,14 +1,20 @@
 import {
   BOSS_HP,
   BOSS_SPAWN,
-  CATS,
   CRATE_TIMES,
   GATE_PAIRS,
-  STAGE2_EXTRA_AFTER,
+  HORDES,
+  HORDE_DEPTH,
+  HORDE_LANE,
+  HORDE_MAX,
+  STAGE2_HORDE_EXTRA,
+  STAGE2_HORDE_EXTRA_AFTER,
   STAGE_BOSS_HP_STEP,
   STAGE_CAT_HP_STEP,
-  type CatDef,
+  STAGE_LATE_CAT_AFTER,
+  STAGE_LATE_CAT_HP_STEP,
   type GateDef,
+  type HordeDef,
 } from './config'
 
 export interface GateSpawn {
@@ -25,6 +31,7 @@ export interface CatSpawn {
   hp: number
   brute: boolean
   variant: number
+  depth: number
 }
 
 export interface CrateSpawn {
@@ -44,20 +51,31 @@ export function catHpMul(stage: number): number {
   return 1 + (stage - 1) * STAGE_CAT_HP_STEP
 }
 
+export function lateCatHpMul(stage: number): number {
+  return 1 + (stage - 1) * STAGE_LATE_CAT_HP_STEP
+}
+
 export function bossMaxHp(stage: number): number {
   return BOSS_HP * (1 + (stage - 1) * STAGE_BOSS_HP_STEP)
 }
 
-function pushCat(out: Spawn[], stage: number, cat: CatDef, index: number, timePad: number, lanePad: number): void {
-  const lane = Math.max(-0.9, Math.min(0.9, cat.lane + lanePad))
-  out.push({
-    kind: 'cat',
-    time: cat.time + timePad,
-    lane,
-    hp: cat.hp * catHpMul(stage),
-    brute: timePad === 0 ? cat.brute : false,
-    variant: (index + (timePad === 0 ? 0 : 1)) % 4,
-  })
+function pushHorde(out: Spawn[], stage: number, horde: HordeDef, index: number): void {
+  const extra = stage > 1 && horde.time >= STAGE2_HORDE_EXTRA_AFTER ? STAGE2_HORDE_EXTRA : 0
+  const count = Math.max(1, Math.min(HORDE_MAX, horde.count + extra))
+  const hp = horde.hp * (horde.time >= STAGE_LATE_CAT_AFTER ? lateCatHpMul(stage) : catHpMul(stage))
+  for (let i = 0; i < count; i += 1) {
+    const u = count === 1 ? 0.5 : i / (count - 1)
+    const lane = -HORDE_LANE + u * HORDE_LANE * 2
+    out.push({
+      kind: 'cat',
+      time: horde.time,
+      lane,
+      hp,
+      brute: false,
+      variant: (index + i) % 4,
+      depth: (i % 3) * HORDE_DEPTH,
+    })
+  }
 }
 
 /** ステージごとの出現表。ステージ2は猫とボスの数字だけを上げる。 */
@@ -67,13 +85,7 @@ export function buildSchedule(stage: number): Spawn[] {
   for (const pair of GATE_PAIRS) {
     spawns.push({ kind: 'gates', time: pair.time, left: pair.left, right: pair.right })
   }
-  CATS.forEach((cat, index) => {
-    pushCat(spawns, safeStage, cat, index, 0, 0)
-    if (safeStage > 1 && cat.time >= STAGE2_EXTRA_AFTER) {
-      const pad = cat.lane >= 0 ? 0.18 : -0.18
-      pushCat(spawns, safeStage, cat, index, 0.2, pad)
-    }
-  })
+  HORDES.forEach((horde, index) => pushHorde(spawns, safeStage, horde, index))
   for (const time of CRATE_TIMES) spawns.push({ kind: 'crate', time })
   spawns.push({ kind: 'boss', time: BOSS_SPAWN, hp: bossMaxHp(safeStage) })
   spawns.sort((a, b) => a.time - b.time || a.kind.localeCompare(b.kind))

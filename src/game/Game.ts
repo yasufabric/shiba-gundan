@@ -198,9 +198,15 @@ export class Game {
         this.puff(event.lane, event.dist, event.target === 'boss' ? '#ffd15a' : '#fff6df', 3)
         return
       case 'cat-down':
-        this.shake = Math.max(this.shake, event.brute ? 6 : 3.5)
+        this.shake = Math.max(this.shake, event.brute ? 6 : 1.2)
         this.sfx.catDown(event.brute)
-        this.burstAt(event.lane, event.dist, ['#ffd15a', '#ff8a3a', '#fff6df', '#ff4ad8'], event.brute ? 18 : 10)
+        this.burstAt(event.lane, event.dist, ['#ffd15a', '#ff8a3a', '#fff6df', '#ff4ad8'], event.brute ? 12 : 4)
+        return
+      case 'stamp':
+        this.shake = Math.max(this.shake, event.hit ? 14 : 10)
+        this.sfx.stamp()
+        this.flashColor = 'rgba(32, 10, 16, 0.85)'
+        this.flash = event.hit ? 0.24 : 0.1
         return
       case 'gate': {
         const at = worldPoint(event.lane, 18)
@@ -368,6 +374,11 @@ export class Game {
     this.frame.dataset.weapon = String(this.sim.weapon)
     this.frame.dataset.stage = String(this.sim.stage)
     this.frame.dataset.boss = this.sim.boss ? String(Math.max(0, Math.ceil(this.sim.boss.hp))) : ''
+    this.frame.dataset.cats = String(this.sim.cats.length)
+    const warning = this.sim.stamps.find((stamp) => !stamp.resolved)
+    const slamming = this.sim.stamps.some((stamp) => stamp.resolved)
+    this.frame.dataset.stamp = warning ? 'warn' : slamming ? 'slam' : ''
+    this.frame.dataset.stampWarn = warning ? warning.warn.toFixed(2) : ''
     if (this.sim.phase === 'clear') this.syncLive(false, 'クリア')
     else if (this.sim.phase === 'lose') this.syncLive(false, 'ざんねん')
   }

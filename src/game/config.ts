@@ -28,13 +28,13 @@ export const MAX_BULLETS = 280
 
 /**
  * 1発の威力は匹数の弱い累乗。
- * 最大武器・良い門取り（約61匹）でボスが約10秒になるよう BOSS_HP と対にする。
+ * ボス体力は武器では変えない。良い門取りの隊列で、豆鉄砲が約20秒、3方向撃ちが約6秒。
  */
 export const DOG_POWER_EXP = 0.37
 
 export const WEAPONS = [
-  { name: '豆鉄砲', interval: 0.32, pellets: 1, spread: 0 },
-  { name: '連射', interval: 0.13, pellets: 1, spread: 0 },
+  { name: '豆鉄砲', interval: 0.24, pellets: 1, spread: 0 },
+  { name: '連射', interval: 0.115, pellets: 1, spread: 0 },
   { name: '3方向撃ち', interval: 0.15, pellets: 3, spread: 0.55 },
 ] as const
 
@@ -72,56 +72,66 @@ export const GATE_PAIRS: readonly GatePairDef[] = [
 export const GATE_INTERVAL = 5
 export const RED_GATE_AFTER = 15
 
-export interface CatDef {
+export interface HordeDef {
   time: number
-  lane: number
+  count: number
   hp: number
-  brute: boolean
 }
 
-/** 1ステージ目。序盤は薄く、門の選択を邪魔しない位置に置く。 */
-export const CATS: readonly CatDef[] = [
-  { time: 1.55, lane: -0.06, hp: 6, brute: false },
-  { time: 1.85, lane: 0.14, hp: 6, brute: false },
-  { time: 7.2, lane: 0, hp: 8, brute: false },
-  { time: 7.45, lane: -0.2, hp: 7, brute: false },
-  { time: 12.4, lane: 0.12, hp: 10, brute: false },
-  { time: 12.55, lane: -0.16, hp: 10, brute: false },
-  { time: 17.2, lane: -0.22, hp: 12, brute: false },
-  { time: 17.35, lane: 0.08, hp: 12, brute: false },
-  { time: 17.5, lane: 0.34, hp: 11, brute: false },
-  { time: 22.4, lane: 0, hp: 20, brute: true },
-  { time: 22.6, lane: -0.32, hp: 12, brute: false },
-  { time: 22.6, lane: 0.32, hp: 12, brute: false },
-  { time: 27.3, lane: -0.14, hp: 14, brute: false },
-  { time: 27.45, lane: 0.16, hp: 14, brute: false },
-  { time: 32.2, lane: 0.06, hp: 24, brute: true },
-  { time: 32.4, lane: -0.36, hp: 13, brute: false },
-  { time: 32.4, lane: 0.4, hp: 13, brute: false },
-  { time: 37.4, lane: -0.1, hp: 15, brute: false },
-  { time: 37.55, lane: 0.12, hp: 15, brute: false },
-  { time: 37.8, lane: 0, hp: 26, brute: true },
-  { time: 41.6, lane: -0.28, hp: 14, brute: false },
-  { time: 41.6, lane: 0.28, hp: 14, brute: false },
-  { time: 41.85, lane: 0, hp: 16, brute: false },
+/**
+ * 体力の低い猫を、道いっぱいに10〜20匹のかたまりで出す。
+ * 弾が当たる列はまとめて溶け、触れた1匹につき豆柴が1匹減る。
+ */
+export const HORDES: readonly HordeDef[] = [
+  { time: 1.7, count: 12, hp: 2 },
+  { time: 7.3, count: 14, hp: 2 },
+  { time: 12.5, count: 16, hp: 3 },
+  { time: 17.3, count: 16, hp: 3 },
+  { time: 22.4, count: 18, hp: 3 },
+  { time: 27.4, count: 18, hp: 3 },
+  { time: 32.3, count: 16, hp: 4 },
+  { time: 37.4, count: 18, hp: 4 },
+  { time: 42.1, count: 14, hp: 4 },
 ]
+
+/** かたまりは道の左右いっぱいに並べ、前後を少しずらして一塊に見せる。 */
+export const HORDE_LANE = 0.88
+export const HORDE_DEPTH = 18
+export const HORDE_MAX = 20
 
 /** 最初の20秒で1つ、40秒までにもう1つ。ボスの前に武器が最大まで届く位置。 */
 export const CRATE_TIMES = [8.2, 33.6] as const
 export const CRATE_HP = 10
 export const CRATE_HIT_HALF = 0.48
 
-/** 45秒ごろに出す。HP は最大武器・良い門取りで約10秒。 */
+/** 45秒ごろに出す。体力は固定。最大武器で約6秒、最弱武器で約20秒。 */
 export const BOSS_SPAWN = 45
-export const BOSS_HP = 990
+export const BOSS_HP = 580
 export const BOSS_STOP = 390
 export const BOSS_HIT_HALF = 0.9
 export const BOSS_FACE = 78
 
-/** 2ステージ目以降。1ステージ分ずつ足す。 */
-export const STAGE_CAT_HP_STEP = 0.42
+/**
+ * ボスが止まってから落とす肉球スタンプ。
+ * 左右どちらかのレーンに影を出してから着地し、隊列が重なると豆柴が減る。
+ */
+export const STAMP_WARN = 0.8
+export const STAMP_DAMAGE = 5
+export const STAMP_INTERVALS = [2.4, 2.8, 2.2, 2.6] as const
+export const STAMP_FIRST_DELAY = 0.35
+export const STAMP_LANE = 0.72
+export const STAMP_HIT_HALF = 0.78
+export const STAMP_SLAM = 0.42
+
+/** 2ステージ目以降。1ステージ分ずつ足す。猫は匹数も少し増やす。 */
+export const STAGE_CAT_HP_STEP = 0.22
+/** 2ステージ目の終盤だけ、かたまりの体力をさらに上げる。最弱武器でもボスは倒せる範囲。 */
+export const STAGE_LATE_CAT_HP_STEP = 2.2
+export const STAGE_LATE_CAT_AFTER = 36
 export const STAGE_BOSS_HP_STEP = 0.32
-export const STAGE2_EXTRA_AFTER = 22
+export const STAGE2_HORDE_EXTRA = 2
+/** 木箱の通り道はステージ1と同じ密度にし、この時刻以降のかたまりだけ増やす。 */
+export const STAGE2_HORDE_EXTRA_AFTER = 36
 
 export const LOOK = {
   horizonY: 250,

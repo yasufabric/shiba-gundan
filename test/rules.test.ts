@@ -6,8 +6,13 @@ import {
   CRATE_TIMES,
   GATE_INTERVAL,
   GATE_PAIRS,
+  HORDES,
+  HORDE_MAX,
   RED_GATE_AFTER,
   START_DOGS,
+  STAMP_DAMAGE,
+  STAMP_INTERVALS,
+  STAMP_WARN,
 } from '../src/game/config'
 import { bossMaxHp, buildSchedule, catHpMul } from '../src/game/level'
 import { applyGate, gateLabel, isRedGate } from '../src/game/rules'
@@ -67,6 +72,26 @@ test('武器↓は1段下がり、0未満にはならない。減算は0で止�
   assert.equal(applyGate({ dogs: 4, weapon: 0 }, { kind: 'weapon', amount: -1 }).army.weapon, 0)
   assert.equal(applyGate({ dogs: 3, weapon: 0 }, { kind: 'add', amount: -5 }).army.dogs, 0)
   assert.equal(applyGate({ dogs: 3, weapon: 1 }, { kind: 'add', amount: -5 }).good, false)
+})
+
+test('猫は10〜20匹のかたまりで、合計はばら撒きより多い', () => {
+  assert.ok(HORDES.length >= 4)
+  let total = 0
+  for (const horde of HORDES) {
+    assert.ok(horde.count >= 10 && horde.count <= HORDE_MAX)
+    assert.ok(horde.hp <= 6)
+    total += horde.count
+  }
+  assert.ok(total > 23)
+  const cats = buildSchedule(1).filter((item) => item.kind === 'cat')
+  assert.equal(cats.length, total)
+})
+
+test('肉球スタンプは0.8秒前に予告し、2〜3秒おきに5匹削る', () => {
+  assert.equal(STAMP_WARN, 0.8)
+  assert.equal(STAMP_DAMAGE, 5)
+  assert.ok(STAMP_INTERVALS.length >= 2)
+  for (const interval of STAMP_INTERVALS) assert.ok(interval >= 2 && interval <= 3)
 })
 
 test('2ステージ目は猫とボスの数字だけ上がる', () => {

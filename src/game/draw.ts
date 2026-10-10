@@ -1,6 +1,8 @@
 import {
   LOOK,
   SCROLL_SPEED,
+  STAMP_SLAM,
+  STAMP_WARN,
   VIEW_H,
   VIEW_W,
   WEAPONS,
@@ -396,9 +398,11 @@ function eye(ctx: CanvasRenderingContext2D, x: number, y: number, fur: Fur, angr
 
 function drawCat(ctx: CanvasRenderingContext2D, cat: Cat, time: number): void {
   const at = project(cat.lane, Math.max(0, cat.dist))
-  const bob = Math.sin(time * 8 + cat.variant) * 2.2 * at.scale
-  const h = LOOK.catH * (cat.brute ? LOOK.bruteMul : 1) * at.scale
-  paintCat(ctx, at.x, at.y + bob, h / 84, FURS[cat.variant] ?? FURS[0], false, cat.flash, time + cat.id)
+  const bob = Math.sin(time * 8 + cat.variant) * 1.4 * at.scale
+  const h = LOOK.catH * (cat.brute ? LOOK.bruteMul : 0.78) * at.scale
+  const fur = FURS[cat.variant] ?? FURS[0]
+  if (cat.brute) paintCat(ctx, at.x, at.y + bob, h / 84, fur, false, cat.flash, time + cat.id)
+  else paintHordeCat(ctx, at.x, at.y + bob, h / 84, fur, cat.flash)
 }
 
 function drawBoss(ctx: CanvasRenderingContext2D, sim: Sim, time: number): void {
@@ -580,6 +584,122 @@ function paintCat(
     ctx.fillRect(-40, -90, 80, 100)
   }
   ctx.restore()
+}
+
+function paintHordeCat(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  s: number,
+  fur: Fur,
+  flash: number,
+): void {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.scale(s, s)
+  ctx.fillStyle = 'rgba(0,0,0,0.22)'
+  ctx.beginPath()
+  ctx.ellipse(0, 2, 18, 5, 0, 0, Math.PI * 2)
+  ctx.fill()
+
+  ctx.beginPath()
+  ctx.ellipse(0, -28, 16, 12, 0, 0, Math.PI * 2)
+  fillStroke(ctx, fur.body, 3)
+  ctx.beginPath()
+  ctx.arc(0, -46, 15, 0, Math.PI * 2)
+  fillStroke(ctx, fur.body, 3)
+
+  for (const dir of [-1, 1]) {
+    ctx.beginPath()
+    ctx.moveTo(dir * 6, -52)
+    ctx.lineTo(dir * 4, -68)
+    ctx.lineTo(dir * 16, -50)
+    ctx.closePath()
+    fillStroke(ctx, fur.body, 2.5)
+    ctx.beginPath()
+    ctx.moveTo(dir * 7, -52)
+    ctx.lineTo(dir * 6, -62)
+    ctx.lineTo(dir * 13, -50)
+    ctx.closePath()
+    ctx.fillStyle = fur.ear
+    ctx.fill()
+  }
+
+  eye(ctx, -6, -48, fur, false)
+  eye(ctx, 6, -48, fur, false)
+  ctx.beginPath()
+  ctx.moveTo(0, -42)
+  ctx.lineTo(-2, -39)
+  ctx.lineTo(2, -39)
+  ctx.closePath()
+  ctx.fillStyle = '#ff8fab'
+  ctx.fill()
+
+  ctx.beginPath()
+  ctx.arc(0, -24, 3.2, 0, Math.PI * 2)
+  fillStroke(ctx, '#ffd15a', 1.6)
+
+  if (flash > 0) {
+    ctx.globalCompositeOperation = 'source-atop'
+    ctx.fillStyle = `rgba(255,255,255,${Math.min(0.85, flash)})`
+    ctx.fillRect(-30, -74, 60, 80)
+  }
+  ctx.restore()
+}
+
+function drawPawMark(ctx: CanvasRenderingContext2D, scale: number, inked: boolean): void {
+  ctx.save()
+  ctx.scale(scale, scale * 0.82)
+  const pad = inked ? '#ff7a2a' : '#1a1024'
+  const toe = inked ? '#ff9344' : '#140c18'
+  const bean = inked ? '#ffe0c2' : '#2a2030'
+  const toes: Array<[number, number]> = [
+    [-26, -30],
+    [-9, -40],
+    [9, -40],
+    [26, -30],
+  ]
+  for (const [x, y] of toes) {
+    ctx.beginPath()
+    ctx.ellipse(x, y, 13, 15, 0, 0, Math.PI * 2)
+    fillStroke(ctx, toe, inked ? 3 : 2)
+    ctx.beginPath()
+    ctx.ellipse(x, y + 2, 6, 7, 0, 0, Math.PI * 2)
+    ctx.fillStyle = bean
+    ctx.fill()
+  }
+  ctx.beginPath()
+  ctx.ellipse(0, 4, 28, 18, 0, 0, Math.PI * 2)
+  fillStroke(ctx, pad, inked ? 3.5 : 2)
+  ctx.beginPath()
+  ctx.ellipse(0, 6, 14, 9, 0, 0, Math.PI * 2)
+  ctx.fillStyle = bean
+  ctx.fill()
+  ctx.restore()
+}
+
+function drawStamps(ctx: CanvasRenderingContext2D, sim: Sim): void {
+  for (const stamp of sim.stamps) {
+    const at = project(stamp.lane, 16)
+    ctx.save()
+    ctx.translate(at.x, at.y + 10)
+    if (!stamp.resolved) {
+      const t = 1 - Math.max(0, stamp.warn) / STAMP_WARN
+      const w = 34 + t * 52
+      const h = 14 + t * 16
+      ctx.fillStyle = `rgba(10, 6, 14, ${0.28 + t * 0.48})`
+      ctx.beginPath()
+      ctx.ellipse(0, 6, w, h, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.globalAlpha = 0.12 + t * 0.28
+      drawPawMark(ctx, 0.55 + t * 0.2, false)
+    } else {
+      const t = Math.max(0, stamp.slam / STAMP_SLAM)
+      ctx.globalAlpha = Math.min(1, t * 1.5)
+      drawPawMark(ctx, 1.18 - t * 0.12, true)
+    }
+    ctx.restore()
+  }
 }
 
 function drawBullet(ctx: CanvasRenderingContext2D, bullet: Bullet): void {
@@ -816,6 +936,7 @@ export function render(ctx: CanvasRenderingContext2D, state: RenderState): void 
   for (const item of order) drawWorldItem(ctx, state, item.kind, item.index)
   drawBoss(ctx, state.sim, state.time)
   drawArmy(ctx, state)
+  drawStamps(ctx, state.sim)
   drawFlyers(ctx, state)
   ctx.restore()
 

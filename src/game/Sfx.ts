@@ -102,6 +102,7 @@ export class Sfx {
   private master: GainNode | null = null
   private shotAt = 0
   private hitAt = 0
+  private catAt = 0
   muted: boolean
 
   constructor(muted = false) {
@@ -178,9 +179,20 @@ export class Sfx {
   catDown(brute: boolean): void {
     const live = this.live()
     if (!live) return
+    if (!brute && live.ctx.currentTime - this.catAt < 0.07) return
+    this.catAt = live.ctx.currentTime
     const t = live.ctx.currentTime
-    tone(live.ctx, live.out, t, { type: 'triangle', freq: brute ? 220 : 310, to: 90, glide: 0.12, peak: 0.12, decay: 0.12 })
-    noise(live.ctx, live.out, t, { filter: 'bandpass', freq: 900, to: 240, q: 0.8, peak: 0.1, decay: 0.1 })
+    tone(live.ctx, live.out, t, { type: 'triangle', freq: brute ? 220 : 310, to: 90, glide: 0.12, peak: brute ? 0.12 : 0.07, decay: 0.1 })
+    noise(live.ctx, live.out, t, { filter: 'bandpass', freq: 900, to: 240, q: 0.8, peak: brute ? 0.1 : 0.06, decay: 0.08 })
+  }
+
+  stamp(): void {
+    const live = this.live()
+    if (!live) return
+    const t = live.ctx.currentTime
+    noise(live.ctx, live.out, t, { filter: 'lowpass', freq: 220, to: 40, q: 0.8, peak: 0.42, decay: 0.32 })
+    tone(live.ctx, live.out, t, { type: 'sine', freq: 92, to: 28, glide: 0.22, peak: 0.32, decay: 0.28 })
+    tone(live.ctx, live.out, t, { type: 'triangle', freq: 70, to: 36, glide: 0.16, peak: 0.12, decay: 0.2, delay: 0.02 })
   }
 
   gateGood(): void {
