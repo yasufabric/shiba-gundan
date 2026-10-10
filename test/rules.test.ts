@@ -7,52 +7,58 @@ import {
   GATE_INTERVAL,
   GATE_PAIRS,
   HORDES,
+  HORDE_LANE,
   HORDE_MAX,
-  RED_GATE_AFTER,
+  HORDE_ROWS,
   START_DOGS,
-  STAMP_DAMAGE,
   STAMP_INTERVALS,
+  STAMP_MIN,
   STAMP_WARN,
+  WEAPON_CAP_DOGS,
 } from '../src/game/config'
 import { bossMaxHp, buildSchedule, catHpMul } from '../src/game/level'
-import { applyGate, gateLabel, isRedGate } from '../src/game/rules'
+import { applyGate, gateLabel, isRedGate, stampLoss } from '../src/game/rules'
 
-test('豆柴は5匹から始まり、1組目の門はどちらも10匹になる', () => {
+test('豆柴は5匹から始まり、門は左右とも得で中身だけちがう', () => {
   assert.equal(START_DOGS, 5)
+  assert.ok(GATE_PAIRS.length >= 4)
+  for (const pair of GATE_PAIRS) {
+    assert.equal(isRedGate(pair.left), false)
+    assert.equal(isRedGate(pair.right), false)
+    assert.notEqual(pair.left.kind, pair.right.kind)
+    const kinds = [pair.left.kind, pair.right.kind].sort()
+    assert.deepEqual(kinds, ['add', 'weapon'])
+    for (const op of [pair.left, pair.right]) {
+      if (op.kind === 'add') assert.ok(op.amount > 0)
+      if (op.kind === 'weapon') assert.ok(op.amount > 0)
+    }
+  }
   const first = GATE_PAIRS[0]
   assert.ok(first)
+  assert.equal(gateLabel(first.left), '+2')
+  assert.equal(gateLabel(first.right), '武器↑')
   const army = { dogs: START_DOGS, weapon: 0 as const }
-  assert.equal(isRedGate(first.left), false)
-  assert.equal(isRedGate(first.right), false)
-  assert.equal(applyGate(army, first.left).army.dogs, 10)
-  assert.equal(applyGate(army, first.right).army.dogs, 10)
-  assert.equal(gateLabel(first.left), '+5')
-  assert.equal(gateLabel(first.right), '×2')
+  assert.equal(applyGate(army, first.left).army.dogs, 7)
+  assert.equal(applyGate(army, first.right).army.weapon, 1)
 })
 
-test('2組目からは結果が分かれる', () => {
-  const second = GATE_PAIRS[1]
-  assert.ok(second)
-  const army = { dogs: 10, weapon: 0 as const }
-  const left = applyGate(army, second.left).army.dogs
-  const right = applyGate(army, second.right).army.dogs
-  assert.notEqual(left, right)
-  assert.ok(Math.abs(left - right) >= 5)
-})
-
-test('門は約5秒ごと、赤い門は15秒を過ぎてから', () => {
+test('門は約5秒ごとに左右が入れ替わる', () => {
   for (let i = 1; i < GATE_PAIRS.length; i += 1) {
     const prev = GATE_PAIRS[i - 1]
     const next = GATE_PAIRS[i]
     assert.ok(prev && next)
     assert.equal(next.time - prev.time, GATE_INTERVAL)
+    assert.notEqual(prev.left.kind, next.left.kind)
   }
-  for (const pair of GATE_PAIRS) {
-    for (const op of [pair.left, pair.right]) {
-      if (isRedGate(op)) assert.ok(pair.time > RED_GATE_AFTER)
-    }
-  }
-  assert.ok(GATE_PAIRS.some((pair) => pair.time > RED_GATE_AFTER && (isRedGate(pair.left) || isRedGate(pair.right))))
+})
+
+test('武器が最大のとき武器↑は豆柴を1匹足す', () => {
+  const op = { kind: 'weapon' as const, amount: 1 }
+  assert.equal(WEAPON_CAP_DOGS, 1)
+  assert.equal(gateLabel(op, 2), '+1')
+  assert.deepEqual(applyGate({ dogs: 8, weapon: 2 }, op).army, { dogs: 9, weapon: 2 })
+  assert.equal(applyGate({ dogs: 4, weapon: 0 }, { kind: 'weapon', amount: -1 }).army.weapon, 0)
+  assert.equal(applyGate({ dogs: 4, weapon: 2 }, { kind: 'weapon', amount: -1 }).army.weapon, 1)
 })
 
 test('木箱は20秒以内と40秒以内に1つずつ、ボスは45秒', () => {
@@ -64,32 +70,33 @@ test('木箱は20秒以内と40秒以内に1つずつ、ボスは45秒', () => {
   assert.ok(CRATE_TIMES[1] < BOSS_SPAWN)
 })
 
-test('武器↓は1段下がり、0未満にはならない。減算は0で止まる', () => {
-  assert.deepEqual(applyGate({ dogs: 4, weapon: 2 }, { kind: 'weapon', amount: -1 }).army, {
-    dogs: 4,
-    weapon: 1,
-  })
-  assert.equal(applyGate({ dogs: 4, weapon: 0 }, { kind: 'weapon', amount: -1 }).army.weapon, 0)
-  assert.equal(applyGate({ dogs: 3, weapon: 0 }, { kind: 'add', amount: -5 }).army.dogs, 0)
-  assert.equal(applyGate({ dogs: 3, weapon: 1 }, { kind: 'add', amount: -5 }).good, false)
-})
-
-test('猫は10〜20匹のかたまりで、合計はばら撒きより多い', () => {
+test('猫は道の端から端まで、10〜20匹の1列', () => {
+  assert.equal(HORDE_ROWS, 1)
+  assert.equal(HORDE_LANE, 1)
   assert.ok(HORDES.length >= 4)
   let total = 0
   for (const horde of HORDES) {
     assert.ok(horde.count >= 10 && horde.count <= HORDE_MAX)
-    assert.ok(horde.hp <= 6)
+    assert.ok(horde.hp > 0 && horde.hp <= 8)
     total += horde.count
   }
   assert.ok(total > 23)
   const cats = buildSchedule(1).filter((item) => item.kind === 'cat')
   assert.equal(cats.length, total)
+  const lanes = cats.filter((cat) => cat.kind === 'cat').map((cat) => cat.lane)
+  assert.ok(Math.min(...lanes) <= -0.95)
+  assert.ok(Math.max(...lanes) >= 0.95)
 })
 
-test('肉球スタンプは0.8秒前に予告し、2〜3秒おきに5匹削る', () => {
+test('肉球は4分の1を切り上げた数と5匹の多いほう', () => {
   assert.equal(STAMP_WARN, 0.8)
-  assert.equal(STAMP_DAMAGE, 5)
+  assert.equal(STAMP_MIN, 5)
+  assert.equal(stampLoss(0), 0)
+  assert.equal(stampLoss(3), 5)
+  assert.equal(stampLoss(16), 5)
+  assert.equal(stampLoss(21), 6)
+  assert.equal(stampLoss(24), 6)
+  assert.equal(stampLoss(40), 10)
   assert.ok(STAMP_INTERVALS.length >= 2)
   for (const interval of STAMP_INTERVALS) assert.ok(interval >= 2 && interval <= 3)
 })

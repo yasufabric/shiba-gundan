@@ -10,7 +10,7 @@ import {
 import { beanOffsets, project } from './layout'
 import { gateLabel, gateTone } from './rules'
 import type { SpriteSet } from './sprites'
-import type { Bullet, Cat, Crate, Gate, Sim } from './types'
+import type { Bullet, Cat, Crate, Gate, Sim, WeaponLevel } from './types'
 
 export interface Particle {
   x: number
@@ -256,7 +256,7 @@ function drawRoad(ctx: CanvasRenderingContext2D, time: number): void {
   }
 }
 
-function drawGate(ctx: CanvasRenderingContext2D, gate: Gate): void {
+function drawGate(ctx: CanvasRenderingContext2D, gate: Gate, weapon: WeaponLevel): void {
   const dist = Math.max(0, gate.dist)
   const sideLane = gate.side < 0 ? -0.52 : 0.52
   const at = project(sideLane, dist)
@@ -290,7 +290,7 @@ function drawGate(ctx: CanvasRenderingContext2D, gate: Gate): void {
   roundRect(ctx, x + 6 * at.scale, y + 6 * at.scale, width - 12 * at.scale, height * 0.28, 8 * at.scale)
   ctx.fill()
 
-  const label = gateLabel(gate.op)
+  const label = gateLabel(gate.op, weapon)
   const fontSize = Math.max(16, (label.length > 2 ? 34 : 46) * at.scale)
   ctx.font = `${fontSize}px ${FONT}`
   ctx.textAlign = 'center'
@@ -898,7 +898,7 @@ function drawWorldItem(ctx: CanvasRenderingContext2D, state: RenderState, kind: 
   const { sim } = state
   switch (kind) {
     case 'gate':
-      drawGate(ctx, sim.gates[index])
+      drawGate(ctx, sim.gates[index], state.sim.weapon)
       return
     case 'crate':
       paintCrate(ctx, sim.crates[index])

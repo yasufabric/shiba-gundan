@@ -75,7 +75,7 @@ function pushHorde(out: Spawn[], stage: number, horde: HordeDef, index: number):
     out.push({
       kind: 'cat',
       time: horde.time,
-      lane: Math.max(-0.94, Math.min(0.94, lane)),
+      lane,
       hp,
       brute: false,
       variant: (index + i) % 4,

@@ -241,10 +241,35 @@ export class Game {
         })
         this.burstAt(event.lane, event.dist, ['#e8b15a', '#d6ff3a', '#fff6df'], 14)
         return
-      case 'hurt':
-        this.shake = Math.max(this.shake, 7)
+      case 'hurt': {
+        this.shake = Math.max(this.shake, 8)
         this.sfx.gateBad()
+        this.burstAt(event.lane, event.dist, ['#ff8a3a', '#ff4ad8', '#ffd15a', '#fff6df'], 10)
+        this.burstAt(this.sim.lane, 8, ['#fff6df', '#d6ff3a', '#7dffb0', '#ffd15a'], 8)
+        const at = worldPoint(event.lane, Math.max(0, event.dist))
+        this.floaters.push({
+          x: at.x,
+          y: at.y - 28,
+          text: '−1',
+          life: 0.7,
+          max: 0.7,
+          color: '#ffd0dc',
+        })
+        const ring = worldPoint((event.lane + this.sim.lane) / 2, 12)
+        this.particles.push({
+          x: ring.x,
+          y: ring.y,
+          vx: 0,
+          vy: 0,
+          life: 0.35,
+          max: 0.35,
+          size: 8,
+          color: '#fff6df',
+          kind: 'ring',
+          rot: 0,
+        })
         return
+      }
       case 'boss-down':
         this.shake = 16
         this.flash = 0.85
