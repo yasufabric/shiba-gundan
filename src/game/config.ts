@@ -98,14 +98,14 @@ export interface HordeDef {
  */
 export const HORDES: readonly HordeDef[] = [
   { time: 1.7, count: 14, hp: 2 },
-  { time: 7.3, count: 12, hp: 1 },
-  { time: 12.5, count: 16, hp: 2 },
-  { time: 17.3, count: 16, hp: 6 },
-  { time: 22.4, count: 18, hp: 6 },
-  { time: 27.4, count: 16, hp: 6 },
-  { time: 32.3, count: 18, hp: 7 },
-  { time: 37.4, count: 18, hp: 7 },
-  { time: 42.1, count: 16, hp: 7 },
+  { time: 4.5, count: 12, hp: 1 },
+  { time: 11.2, count: 16, hp: 2 },
+  { time: 16.0, count: 16, hp: 6 },
+  { time: 21.0, count: 18, hp: 6 },
+  { time: 26.0, count: 16, hp: 6 },
+  { time: 31.0, count: 18, hp: 7 },
+  { time: 36.2, count: 18, hp: 7 },
+  { time: 41.0, count: 16, hp: 7 },
 ]
 
 /**
