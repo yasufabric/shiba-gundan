@@ -847,6 +847,37 @@ function drawWorldItem(
   }
 }
 
+let backdrop: HTMLCanvasElement | null = null
+let backdropKey = ''
+
+function paintVignette(ctx: CanvasRenderingContext2D): void {
+  const vignette = ctx.createRadialGradient(VIEW_W / 2, VIEW_H / 2, 180, VIEW_W / 2, VIEW_H / 2, 520)
+  vignette.addColorStop(0, 'rgba(0,0,0,0)')
+  vignette.addColorStop(1, 'rgba(0,0,0,0.28)')
+  ctx.fillStyle = vignette
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H)
+}
+
+/** 空・ビル・道・端の暗がり。サイズが変わるまで同じ絵を貼る。 */
+function ensureBackdrop(pixelW: number, pixelH: number): HTMLCanvasElement {
+  const key = `${pixelW}x${pixelH}`
+  if (backdrop && backdropKey === key) return backdrop
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, pixelW)
+  canvas.height = Math.max(1, pixelH)
+  const baked = canvas.getContext('2d')
+  if (baked) {
+    baked.setTransform(canvas.width / VIEW_W, 0, 0, canvas.height / VIEW_H, 0, 0)
+    drawSky(baked, 0)
+    drawBuildings(baked, 0)
+    drawRoad(baked, 0)
+    paintVignette(baked)
+  }
+  backdrop = canvas
+  backdropKey = key
+  return canvas
+}
+
 export function render(ctx: CanvasRenderingContext2D, state: RenderState): void {
   ctx.clearRect(0, 0, VIEW_W, VIEW_H)
   const mag = state.shake
@@ -854,9 +885,8 @@ export function render(ctx: CanvasRenderingContext2D, state: RenderState): void 
   const oy = Math.cos(state.time * 37) * mag
   ctx.save()
   ctx.translate(ox, oy)
-  drawSky(ctx, state.time)
-  drawBuildings(ctx, state.time)
-  drawRoad(ctx, state.time)
+  const plate = ensureBackdrop(ctx.canvas.width, ctx.canvas.height)
+  ctx.drawImage(plate, 0, 0, VIEW_W, VIEW_H)
 
   const order: { dist: number; kind: 'gate' | 'drum' | 'cat' | 'bullet'; index: number }[] = []
   state.sim.gates.forEach((gate, index) => order.push({ dist: gate.dist, kind: 'gate', index }))
@@ -880,11 +910,6 @@ export function render(ctx: CanvasRenderingContext2D, state: RenderState): void 
     ctx.fillRect(0, 0, VIEW_W, VIEW_H)
     ctx.globalAlpha = 1
   }
-  const vignette = ctx.createRadialGradient(VIEW_W / 2, VIEW_H / 2, 180, VIEW_W / 2, VIEW_H / 2, 520)
-  vignette.addColorStop(0, 'rgba(0,0,0,0)')
-  vignette.addColorStop(1, 'rgba(0,0,0,0.28)')
-  ctx.fillStyle = vignette
-  ctx.fillRect(0, 0, VIEW_W, VIEW_H)
   drawResult(ctx, state)
 }
 

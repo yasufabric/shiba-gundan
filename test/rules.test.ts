@@ -59,6 +59,24 @@ test('隊列の横幅は道の3分の1で止まり、描く豆柴は80匹まで'
   assert.ok(countFontSize(300) <= FORMATION.countMax)
 })
 
+test('最初の2組は増える青だけで、赤と÷は15秒後', () => {
+  assert.ok(GATE_PAIRS.length >= 4)
+  const opening = GATE_PAIRS.slice(0, 2)
+  for (const pair of opening) {
+    assert.ok(pair.time <= 15)
+    for (const op of [pair.left, pair.right]) {
+      assert.equal(isRedGate(op), false)
+      assert.ok(applyGate(START_DOGS, op).dogs > START_DOGS)
+    }
+  }
+  const later = GATE_PAIRS.filter((pair) => isRedGate(pair.left) || isRedGate(pair.right))
+  assert.ok(later.length >= 1)
+  for (const pair of later) assert.ok(pair.time > 15)
+  const divided = GATE_PAIRS.find((pair) => pair.left.kind === 'mul' && pair.left.amount <= -2 || pair.right.kind === 'mul' && pair.right.amount <= -2)
+  assert.ok(divided)
+  assert.ok((divided?.time ?? 0) > 15)
+})
+
 test('猫の群れは想定匹数の固定値で、ボスは最後', () => {
   assert.equal(HORDE_ROWS, 1)
   assert.equal(HORDE_LANE, 1)
@@ -81,9 +99,9 @@ test('猫の群れは想定匹数の固定値で、ボスは最後', () => {
   assert.equal(kinds.has('boss'), true)
 })
 
-test('一番いい門の手前にドラム缶がある', () => {
+test('×の門の手前にドラム缶がある', () => {
   const drums = GATE_PAIRS.filter((pair) => pair.drum)
-  assert.ok(drums.length >= 3)
+  assert.ok(drums.length >= 1)
   const multiplied = GATE_PAIRS.find((pair) => pair.left.kind === 'mul' && pair.left.amount >= 2 || pair.right.kind === 'mul' && pair.right.amount >= 2)
   assert.ok(multiplied?.drum)
 })

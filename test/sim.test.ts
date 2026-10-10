@@ -11,7 +11,7 @@ const DT = 1 / 60
 function projectOp(sim: Sim, gate: Sim['gates'][number]): GateDef {
   const streams = Math.min(MAX_STREAMS, Math.max(1, sim.dogs))
   const seconds = Math.max(0.2, gate.dist / SCROLL_SPEED)
-  let hits = Math.round((seconds / FIRE_INTERVAL) * streams * 0.55)
+  let hits = Math.round((seconds / FIRE_INTERVAL) * streams * 1.32)
   const drum = sim.drums.find((item) => item.alive && item.side === gate.side)
   if (drum) {
     const damage = volleyCatDamage(sim.dogs) / streams
@@ -31,7 +31,7 @@ function steer(sim: Sim, policy: 'idle' | 'smart' | 'half', locks: Map<number, n
     else right = gate
     if (!soonest || gate.dist < soonest.dist) soonest = { dist: gate.dist, pairId: gate.pairId }
   }
-  if (!soonest || !left || !right || left.pairId !== soonest.pairId || soonest.dist > 880) return sim.lane
+  if (!soonest || !left || !right || left.pairId !== soonest.pairId) return sim.lane
   const locked = locks.get(soonest.pairId)
   if (locked !== undefined) return locked
   const leftDogs = applyGate(sim.dogs, projectOp(sim, left)).dogs
@@ -60,27 +60,57 @@ function run(policy: 'idle' | 'smart' | 'half', maxTime = 80) {
   return { sim, events, beforeBoss }
 }
 
-function hordeLosses(events: Array<SimEvent & { time: number }>): number[] {
+function hordeReport(events: Array<SimEvent & { time: number }>): Array<{ loss: number; before: number; ratio: number }> {
+  let dogs = 1
+  let cursor = 0
   return HORDES.map((horde) => {
     const arrive = horde.time + HORDE_SPAWN / SCROLL_SPEED
-    return events.filter((event) => event.type === 'hurt' && event.loss === 1 && event.time >= arrive - 0.15 && event.time <= arrive + 0.45).length
+    const end = arrive + 0.55
+    while (cursor < events.length && events[cursor].time < arrive - 0.2) {
+      const event = events[cursor]
+      if (event.type === 'gate') dogs = event.dogsAfter
+      if (event.type === 'hurt') dogs = Math.max(0, dogs - event.loss)
+      cursor += 1
+    }
+    const before = dogs
+    let loss = 0
+    while (cursor < events.length && events[cursor].time <= end) {
+      const event = events[cursor]
+      if (event.type === 'hurt' && event.loss === 1) loss += 1
+      if (event.type === 'gate') dogs = event.dogsAfter
+      if (event.type === 'hurt') dogs = Math.max(0, dogs - event.loss)
+      cursor += 1
+    }
+    return { loss, before, ratio: before > 0 ? loss / before : 1 }
   })
 }
 
-test('指を動かさないと、最初の門で負ける', () => {
-  const { sim, events } = run('idle', 20)
-  console.log(`idle t=${sim.time.toFixed(2)} dogs=${sim.dogs} phase=${sim.phase}`)
+test('指を動かさないと15秒までは減らず、そのあとの門で負ける', () => {
+  const { sim, events } = run('idle', 30)
+  let dogs = 1
+  let dropped = false
+  for (const event of events) {
+    if (event.time > 15) break
+    if (event.type === 'gate') {
+      if (event.dogsAfter < dogs) dropped = true
+      dogs = event.dogsAfter
+    }
+    if (event.type === 'hurt') {
+      dropped = true
+      dogs = Math.max(0, dogs - event.loss)
+    }
+  }
+  console.log(`idle t=${sim.time.toFixed(2)} dogs=${sim.dogs} phase=${sim.phase} early=${dogs}`)
+  assert.equal(dropped, false)
+  assert.ok(dogs >= 1)
   assert.equal(sim.phase, 'lose')
   assert.equal(sim.dogs, 0)
-  assert.ok(sim.time < 12, String(sim.time))
-  const taken = events.find((event) => event.type === 'gate')
-  assert.equal(taken?.type, 'gate')
-  if (taken?.type === 'gate') assert.equal(taken.good, false)
+  assert.ok(sim.time > 15 && sim.time < 24, String(sim.time))
 })
 
-test('赤い門を撃つと数字が上がって青に変わる', () => {
-  const { events } = run('smart', 12)
-  const bumps = events.filter((event) => event.type === 'gate-bump')
+test('赤い門は想定匹数だと約2.5秒で青に変わる', () => {
+  const { events } = run('smart', 22)
+  const bumps = events.filter((event) => event.type === 'gate-bump' && event.time >= 16 && event.time <= 20)
   const first = bumps[0]
   const flip = bumps.find((event) => event.type === 'gate-bump' && event.flipped)
   assert.equal(first?.type, 'gate-bump')
@@ -89,32 +119,39 @@ test('赤い門を撃つと数字が上がって青に変わる', () => {
   const seconds = flip.time - first.time
   console.log(`flip ${seconds.toFixed(2)}s ${first.time.toFixed(2)} -> ${flip.time.toFixed(2)} ${flip.label}`)
   assert.equal(flip.tone, 'blue')
-  assert.ok(seconds >= 0.2 && seconds <= 1.2, String(seconds))
+  assert.ok(seconds >= 2.2 && seconds <= 2.8, String(seconds))
 })
 
-test('うまく選ぶと×の門で数百匹になり、ボスを倒せる', () => {
+test('うまく選ぶと数百匹になり、群れでは1〜2割減ってボスを倒せる', () => {
   const { sim, events, beforeBoss } = run('smart')
-  const losses = hordeLosses(events)
-  const jumped = events.find((event) => event.type === 'gate' && event.label.startsWith('×') && event.dogsAfter >= 200)
-  console.log(`smart phase=${sim.phase} before=${beforeBoss} leaks=${sim.catLeaks} losses=${losses.join(',')} jump=${jumped && jumped.type === 'gate' ? jumped.dogsAfter : '-'}`)
+  const losses = hordeReport(events)
+  const jumped = events.find((event) => event.type === 'gate' && event.label.startsWith('×') && event.dogsAfter >= 250)
+  console.log(
+    `smart phase=${sim.phase} before=${beforeBoss} jump=${jumped && jumped.type === 'gate' ? jumped.dogsAfter : '-'} ${losses.map((row) => `${row.loss}/${row.before}`).join(',')}`,
+  )
   assert.equal(sim.phase, 'clear')
   assert.equal(jumped?.type, 'gate')
-  if (jumped?.type === 'gate') assert.ok(jumped.dogsAfter >= 250 && jumped.dogsAfter <= 380, String(jumped.dogsAfter))
-  assert.ok(beforeBoss >= 400 && beforeBoss <= 700, String(beforeBoss))
-  assert.ok(sim.catLeaks <= 12, String(sim.catLeaks))
+  if (jumped?.type === 'gate') assert.ok(jumped.dogsAfter >= 280 && jumped.dogsAfter <= 340, String(jumped.dogsAfter))
+  assert.ok(beforeBoss >= 200 && beforeBoss <= 320, String(beforeBoss))
   assert.equal(losses.length, HORDES.length)
+  for (const row of losses) {
+    assert.ok(row.ratio >= 0.1 && row.ratio <= 0.2, `${row.loss}/${row.before}`)
+  }
 })
 
-test('門を半分外すと匹数は少なく、群れでは多く削られる', () => {
+test('門を半分外すと群れで約3割減り、ボス前の匹数は少ない', () => {
   const good = run('smart')
   const half = run('half')
-  const losses = hordeLosses(half.events)
-  console.log(`half phase=${half.sim.phase} before=${half.beforeBoss} leaks=${half.sim.catLeaks} losses=${losses.join(',')}`)
+  const losses = hordeReport(half.events)
+  console.log(
+    `half phase=${half.sim.phase} before=${half.beforeBoss} ${losses.map((row) => `${row.loss}/${row.before}`).join(',')}`,
+  )
   assert.equal(half.sim.phase, 'clear')
   assert.ok(half.beforeBoss < good.beforeBoss)
-  assert.ok(half.beforeBoss >= 120 && half.beforeBoss <= 360, String(half.beforeBoss))
-  assert.ok(half.sim.catLeaks > good.sim.catLeaks)
-  assert.ok(losses.some((loss) => loss >= 4), losses.join(','))
+  assert.ok(half.beforeBoss >= 40 && half.beforeBoss <= 140, String(half.beforeBoss))
+  for (const row of losses) {
+    assert.ok(row.ratio >= 0.25 && row.ratio <= 0.36, `${row.loss}/${row.before}`)
+  }
 })
 
 test('弾は隊列の横幅の中だけに飛び、はみ出した猫は豆柴を連れていかない', () => {

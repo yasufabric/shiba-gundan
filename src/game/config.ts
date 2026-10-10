@@ -83,15 +83,14 @@ export interface GatePairDef {
 
 /**
  * 出現時刻。到達はおよそ time + SPAWN_DIST / SCROLL_SPEED 秒後。
- * ドラム缶は、その時点で得なほうの門の手前に置く。
+ * 最初の2組は、弾が当たらなくても増える青い門だけ。
+ * 赤い門と ÷ は 15 秒をすぎてから。× の手前のドラム缶は撃って壊す。
  */
 export const GATE_PAIRS: readonly GatePairDef[] = [
-  { time: 4, left: { kind: 'add', amount: -4 }, right: { kind: 'mul', amount: -6 }, drum: null },
-  { time: 10, left: { kind: 'add', amount: 6 }, right: { kind: 'mul', amount: 3 }, drum: { side: 'right', hp: 46 } },
-  { time: 16, left: { kind: 'add', amount: 20 }, right: { kind: 'add', amount: -18 }, drum: { side: 'left', hp: 220 } },
-  { time: 22, left: { kind: 'add', amount: -24 }, right: { kind: 'add', amount: 16 }, drum: { side: 'right', hp: 260 } },
-  { time: 28, left: { kind: 'add', amount: 12 }, right: { kind: 'add', amount: -16 }, drum: { side: 'left', hp: 280 } },
-  { time: 34, left: { kind: 'add', amount: 10 }, right: { kind: 'add', amount: -12 }, drum: { side: 'left', hp: 300 } },
+  { time: 4, left: { kind: 'add', amount: 12 }, right: { kind: 'add', amount: 4 }, drum: null },
+  { time: 10, left: { kind: 'mul', amount: 2 }, right: { kind: 'add', amount: 6 }, drum: { side: 'left', hp: 302 } },
+  { time: 16, left: { kind: 'add', amount: -120 }, right: { kind: 'mul', amount: -16 }, drum: { side: 'right', hp: 1600 } },
+  { time: 23, left: { kind: 'add', amount: 4 }, right: { kind: 'add', amount: 12 }, drum: null },
 ]
 
 /** 門の左右のあいだ。ここにある弾はどちらの門にも当たらない。 */
@@ -101,8 +100,8 @@ export const GATE_HIT_DIST = 52
  * これより遠い門には弾が当たらない。
  * 数字が変わるのは、門が画面で大きく見えるあいだだけ。
  */
-export const GATE_RANGE = 380
-export const DRUM_RANGE = 500
+export const GATE_RANGE = 840
+export const DRUM_RANGE = 960
 
 /** ドラム缶は門よりこの距離だけ手前（プレイヤー側）に湧く。 */
 export const DRUM_AHEAD = 40
@@ -124,19 +123,17 @@ export interface HordeDef {
  * 実際の匹数では変えない。隊列に重なった猫だけが豆柴を連れていく。
  */
 export const HORDES: readonly HordeDef[] = [
-  { time: 8.05, count: 8, hp: 6 },
-  { time: 14.55, count: 12, hp: 24 },
-  { time: 20.55, count: 14, hp: 36 },
-  { time: 26.55, count: 16, hp: 48 },
-  { time: 32.55, count: 16, hp: 58 },
-  { time: 39.05, count: 18, hp: 68 },
+  { time: 20.4, count: 114, hp: 800 },
+  { time: 27.4, count: 208, hp: 900 },
+  { time: 32.2, count: 148, hp: 900 },
+  { time: 37.0, count: 102, hp: 900 },
 ]
 
 export const HORDE_SPAWN = 300
 export const HORDE_LANE = 1
 export const HORDE_DEPTH = 0
 export const HORDE_ROWS = 1
-export const HORDE_MAX = 24
+export const HORDE_MAX = 220
 
 export const BOSS_SPAWN = 44
 export const BOSS_HP = 7200

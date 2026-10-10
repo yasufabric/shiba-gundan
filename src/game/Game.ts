@@ -108,7 +108,7 @@ export class Game {
     const cssH = Math.max(1, Math.floor(VIEW_H * scale))
     this.frame.style.width = `${cssW}px`
     this.frame.style.height = `${cssH}px`
-    const dpr = Math.min(window.devicePixelRatio || 1, 3)
+    const dpr = Math.min(window.devicePixelRatio || 1, 2)
     this.canvas.width = Math.floor(VIEW_W * dpr)
     this.canvas.height = Math.floor(VIEW_H * dpr)
     this.canvas.style.width = `${cssW}px`
