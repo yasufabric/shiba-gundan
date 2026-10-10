@@ -23,18 +23,15 @@ export const BULLET_SPEED = 700
 export const BULLET_START = 42
 export const BULLET_HIT_DIST = 36
 export const BULLET_HIT_LANE = 0.05
-export const MAX_STREAMS = 10
+/** 豆柴の数だけ弾が増える。この本数で頭打ち。 */
+export const MAX_STREAMS = 16
 export const MAX_BULLETS = 280
-
-/**
- * 猫や木箱への1発の威力は匹数の弱い累乗。
- * ボスへの火力は別で、武器の段階がほぼ全部を決める。
- */
-export const DOG_POWER_EXP = 0.37
+/** 弾は隊列の位置ではなく、道の端から端まで散らす。 */
+export const VOLLEY_HALF = 0.92
 
 /**
  * ボスに当たった弾の合計威力。匹数の累乗は少しだけ。
- * 豆鉄砲は10匹で約25秒、50匹で約18秒。3方向撃ちは50匹で約6秒。体力は固定。
+ * 豆鉄砲は10匹で約25秒、50匹で約17秒。3方向撃ちは50匹で約7秒。体力は固定。
  * 10匹未満は肉球で崩れた隊列なので、残りだけではボスが溶けきらない。
  */
 export const BOSS_DOG_EXP = 0.23
@@ -45,6 +42,14 @@ export const WEAPONS = [
   { name: '連射', interval: 0.115, pellets: 1, spread: 0 },
   { name: '3方向撃ち', interval: 0.15, pellets: 3, spread: 0.55 },
 ] as const
+
+/**
+ * 猫に当たった1発の威力。匹数では割らない。
+ * 連射は間隔が短い。3方向撃ちは1発が強く、弾も3本。
+ */
+export const CAT_SHOT = [1, 1, 2] as const
+/** 武器が最大のときに「武器↑」を取ると、代わりに増える豆柴。 */
+export const WEAPON_CAP_DOGS = 1
 
 export const FORMATION = {
   halfBase: 0.16,
@@ -65,20 +70,22 @@ export interface GatePairDef {
   right: GateDef
 }
 
-/** 出現時刻。到達はおよそ time + SPAWN_DIST / SCROLL_SPEED 秒後。 */
+/**
+ * 出現時刻。到達はおよそ time + SPAWN_DIST / SCROLL_SPEED 秒後。
+ * どちらも得で、中身だけちがう。数か、武器か。
+ */
 export const GATE_PAIRS: readonly GatePairDef[] = [
-  { time: 5, left: { kind: 'add', amount: 5 }, right: { kind: 'mul', amount: 2 } },
-  { time: 10, left: { kind: 'mul', amount: 2 }, right: { kind: 'add', amount: 3 } },
-  { time: 15, left: { kind: 'add', amount: 2 }, right: { kind: 'add', amount: 5 } },
-  { time: 20, left: { kind: 'add', amount: 10 }, right: { kind: 'add', amount: -5 } },
-  { time: 25, left: { kind: 'weapon', amount: -1 }, right: { kind: 'add', amount: 6 } },
-  { time: 30, left: { kind: 'add', amount: 8 }, right: { kind: 'add', amount: -5 } },
-  { time: 35, left: { kind: 'weapon', amount: -1 }, right: { kind: 'add', amount: 8 } },
-  { time: 40, left: { kind: 'add', amount: 4 }, right: { kind: 'add', amount: -5 } },
+  { time: 5, left: { kind: 'add', amount: 2 }, right: { kind: 'weapon', amount: 1 } },
+  { time: 10, left: { kind: 'weapon', amount: 1 }, right: { kind: 'add', amount: 2 } },
+  { time: 15, left: { kind: 'add', amount: 2 }, right: { kind: 'weapon', amount: 1 } },
+  { time: 20, left: { kind: 'weapon', amount: 1 }, right: { kind: 'add', amount: 2 } },
+  { time: 25, left: { kind: 'add', amount: 2 }, right: { kind: 'weapon', amount: 1 } },
+  { time: 30, left: { kind: 'weapon', amount: 1 }, right: { kind: 'add', amount: 2 } },
+  { time: 35, left: { kind: 'add', amount: 2 }, right: { kind: 'weapon', amount: 1 } },
+  { time: 40, left: { kind: 'weapon', amount: 1 }, right: { kind: 'add', amount: 2 } },
 ]
 
 export const GATE_INTERVAL = 5
-export const RED_GATE_AFTER = 15
 
 export interface HordeDef {
   time: number
@@ -87,30 +94,29 @@ export interface HordeDef {
 }
 
 /**
- * 体力の低い猫を、道いっぱいに10〜20匹のかたまりで出す。
- * 弾が当たる列はまとめて溶け、触れた1匹につき豆柴が1匹減る。
+ * 道を端から端までふさぐ。撃ち漏らした猫は、届いたら必ず豆柴を1匹連れていく。
  */
 export const HORDES: readonly HordeDef[] = [
-  { time: 1.7, count: 18, hp: 1 },
-  { time: 7.3, count: 15, hp: 1 },
-  { time: 12.5, count: 18, hp: 1 },
-  { time: 17.3, count: 18, hp: 1 },
-  { time: 22.4, count: 18, hp: 1 },
-  { time: 27.4, count: 15, hp: 1 },
-  { time: 32.3, count: 18, hp: 1 },
-  { time: 37.4, count: 18, hp: 1 },
-  { time: 42.1, count: 15, hp: 1 },
+  { time: 1.7, count: 14, hp: 2 },
+  { time: 7.3, count: 12, hp: 1 },
+  { time: 12.5, count: 16, hp: 2 },
+  { time: 17.3, count: 16, hp: 6 },
+  { time: 22.4, count: 18, hp: 6 },
+  { time: 27.4, count: 16, hp: 6 },
+  { time: 32.3, count: 18, hp: 7 },
+  { time: 37.4, count: 18, hp: 7 },
+  { time: 42.1, count: 16, hp: 7 },
 ]
 
 /**
  * 湧く位置は道がまだ幅を持っているあたり。
  * 手前の地平線に重ねると、10匹以上いても2匹に見える。
  */
-export const HORDE_SPAWN = 360
-/** かたまりは道の左右いっぱいに、前後3列で密集させる。奇数列は半歩ずらす。 */
-export const HORDE_LANE = 0.92
-export const HORDE_DEPTH = 140
-export const HORDE_ROWS = 3
+export const HORDE_SPAWN = 300
+/** かたまりは道の端から端まで、1列で体が重なる壁にする。 */
+export const HORDE_LANE = 1
+export const HORDE_DEPTH = 0
+export const HORDE_ROWS = 1
 export const HORDE_MAX = 20
 
 /** 最初の20秒で1つ、40秒までにもう1つ。ボスの前に武器が最大まで届く位置。 */
@@ -122,7 +128,7 @@ export const CRATE_HIT_HALF = 0.48
 export const BOSS_SPAWN = 45
 export const BOSS_HP = 580
 export const BOSS_STOP = 390
-export const BOSS_HIT_HALF = 0.9
+export const BOSS_HIT_HALF = 1.05
 export const BOSS_FACE = 78
 
 /**
@@ -130,7 +136,8 @@ export const BOSS_FACE = 78
  * 左右どちらかのレーンに影を出してから着地する。同じ側は2回まで。
  */
 export const STAMP_WARN = 0.8
-export const STAMP_DAMAGE = 5
+/** 減る数は、匹数の4分の1を切り上げたものと、この数の、多いほう。 */
+export const STAMP_MIN = 5
 export const STAMP_INTERVALS = [2.4, 2.8, 2.2, 2.6] as const
 export const STAMP_FIRST_DELAY = 0.35
 export const STAMP_LANE = 0.72
@@ -160,8 +167,8 @@ export const LOOK = {
   captainH: 138,
   beanH: 54,
   catH: 118,
-  /** 大群の猫。通常より少し小さく、道の幅に列が並んで見える大きさ。 */
-  hordeMul: 0.82,
+  /** 大群の猫。道の端まで体が重なって、すき間ができない大きさ。 */
+  hordeMul: 1.05,
   bruteMul: 1.16,
   bossMul: 2.65,
   gateH: 124,

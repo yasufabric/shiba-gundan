@@ -8,7 +8,6 @@ import {
   BULLET_START,
   CRATE_HIT_HALF,
   CRATE_HP,
-  FORMATION,
   HORDE_SPAWN,
   LANE_SPEED,
   MAX_BULLETS,
@@ -16,19 +15,20 @@ import {
   PLAYER_CLEARANCE,
   SCROLL_SPEED,
   SPAWN_DIST,
+  CAT_SHOT,
   START_DOGS,
   START_LANE,
-  STAMP_DAMAGE,
   STAMP_FIRST_DELAY,
   STAMP_HIT_HALF,
   STAMP_INTERVALS,
   STAMP_LANE,
   STAMP_SLAM,
   STAMP_WARN,
+  VOLLEY_HALF,
   WEAPONS,
 } from './config'
 import { buildSchedule, type Spawn } from './level'
-import { applyGate, bossBulletDamage, clampWeapon, dogPower, formationHalf, gateLabel, rollStampSide } from './rules'
+import { applyGate, bossBulletDamage, clampWeapon, formationHalf, gateLabel, rollStampSide, stampLoss } from './rules'
 import type { Boss, Bullet, Cat, Crate, Gate, Sim, SimEvent, WeaponLevel } from './types'
 
 export function createSim(stage = 1): Sim {
@@ -143,18 +143,17 @@ function fire(sim: Sim): void {
   if (sim.dogs <= 0) return
   const stats = WEAPONS[sim.weapon]
   const streams = Math.min(MAX_STREAMS, Math.max(1, sim.dogs))
-  const power = dogPower(sim.dogs)
-  const half = formationHalf(sim.dogs) * 0.92
+  const shift = Math.sin(sim.time * 9) * (0.45 / streams)
   for (let pellet = 0; pellet < stats.pellets; pellet += 1) {
     const center = (stats.pellets - 1) / 2
     const spread = (pellet - center) * stats.spread
     for (let i = 0; i < streams; i += 1) {
       const u = streams === 1 ? 0.5 : i / (streams - 1)
       const bullet: Bullet = {
-        lane: sim.lane + (u - 0.5) * 2 * half,
+        lane: (u - 0.5) * 2 * VOLLEY_HALF + shift,
         dist: BULLET_START,
         laneVel: spread,
-        damage: power / streams,
+        damage: CAT_SHOT[sim.weapon],
         bossDamage: bossBulletDamage(sim.dogs, sim.weapon, streams),
         weapon: sim.weapon,
         pellet,
@@ -181,7 +180,8 @@ function resolveGates(sim: Sim): void {
       gate.flash = gate === chosen ? 1 : 0.35
     }
     if (!chosen || sim.phase !== 'play') continue
-    const next = applyGate(arm(sim), chosen.op)
+    const before = arm(sim)
+    const next = applyGate(before, chosen.op)
     sim.dogs = next.army.dogs
     sim.weapon = next.army.weapon
     sim.events.push({
@@ -190,7 +190,7 @@ function resolveGates(sim: Sim): void {
       lane: sim.lane,
       dist: 0,
       dogsAfter: sim.dogs,
-      label: gateLabel(chosen.op),
+      label: gateLabel(chosen.op, before.weapon),
     })
     if (sim.dogs <= 0) lose(sim)
   }
@@ -235,7 +235,7 @@ function resolveStamps(sim: Sim, stepDt: number): void {
       const hit = sim.phase === 'play' && stampHits(sim, stamp.lane)
       sim.events.push({ type: 'stamp', lane: stamp.lane, side: stamp.side, hit })
       if (!hit) continue
-      sim.dogs = Math.max(0, sim.dogs - STAMP_DAMAGE)
+      sim.dogs = Math.max(0, sim.dogs - stampLoss(sim.dogs))
       if (sim.dogs <= 0) lose(sim)
     } else {
       stamp.slam -= stepDt
@@ -245,17 +245,14 @@ function resolveStamps(sim: Sim, stepDt: number): void {
 }
 
 function resolveCats(sim: Sim): void {
-  const reach = formationHalf(sim.dogs) + FORMATION.catBody
   for (const cat of sim.cats) {
     if (!cat.alive || cat.dist > PLAYER_CLEARANCE) continue
     cat.alive = false
     if (sim.phase !== 'play') continue
-    if (Math.abs(cat.lane - sim.lane) <= reach) {
-      sim.dogs = Math.max(0, sim.dogs - 1)
-      sim.catLeaks += 1
-      sim.events.push({ type: 'hurt', lane: cat.lane, dist: cat.dist })
-      if (sim.dogs <= 0) lose(sim)
-    }
+    sim.dogs = Math.max(0, sim.dogs - 1)
+    sim.catLeaks += 1
+    sim.events.push({ type: 'hurt', lane: cat.lane, dist: cat.dist })
+    if (sim.dogs <= 0) lose(sim)
   }
 }
 
