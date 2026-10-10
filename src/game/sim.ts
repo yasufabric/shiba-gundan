@@ -9,6 +9,7 @@ import {
   CRATE_HIT_HALF,
   CRATE_HP,
   FORMATION,
+  LANE_SPEED,
   MAX_BULLETS,
   MAX_STREAMS,
   PLAYER_CLEARANCE,
@@ -16,8 +17,14 @@ import {
   SPAWN_DIST,
   START_DOGS,
   START_LANE,
+  STAMP_DAMAGE,
+  STAMP_FIRST_DELAY,
+  STAMP_HIT_HALF,
+  STAMP_INTERVALS,
+  STAMP_LANE,
+  STAMP_SLAM,
+  STAMP_WARN,
   WEAPONS,
-  LANE_SPEED,
 } from './config'
 import { buildSchedule, type Spawn } from './level'
 import { applyGate, clampWeapon, dogPower, formationHalf, gateLabel } from './rules'
@@ -36,6 +43,7 @@ export function createSim(stage = 1): Sim {
     cats: [],
     crates: [],
     bullets: [],
+    stamps: [],
     boss: null,
     clearedAt: null,
     catLeaks: 0,
@@ -83,7 +91,7 @@ function spawnOne(sim: Sim, item: Spawn): void {
       const cat: Cat = {
         id: sim.nextId++,
         lane: item.lane,
-        dist: SPAWN_DIST,
+        dist: SPAWN_DIST + item.depth,
         hp: item.hp,
         maxHp: item.hp,
         brute: item.brute,
@@ -116,6 +124,8 @@ function spawnOne(sim: Sim, item: Spawn): void {
         flash: 0,
         spawnedAt: sim.time,
         stoppedAt: null,
+        stampCd: STAMP_FIRST_DELAY,
+        stampIndex: 0,
       }
       sim.boss = boss
       return
@@ -181,6 +191,52 @@ function resolveGates(sim: Sim): void {
     })
     if (sim.dogs <= 0) lose(sim)
   }
+}
+
+function stampHits(sim: Sim, lane: number): boolean {
+  const half = formationHalf(Math.max(1, sim.dogs))
+  const stampLeft = lane - STAMP_HIT_HALF
+  const stampRight = lane + STAMP_HIT_HALF
+  const formLeft = sim.lane - half
+  const formRight = sim.lane + half
+  return formLeft <= stampRight && formRight >= stampLeft
+}
+
+function resolveStamps(sim: Sim, stepDt: number): void {
+  const boss = sim.boss
+  if (boss && boss.hp > 0 && boss.stoppedAt !== null) {
+    boss.stampCd -= stepDt
+    while (boss.stampCd <= 0) {
+      const side: -1 | 1 = boss.stampIndex % 2 === 0 ? -1 : 1
+      sim.stamps.push({
+        side,
+        lane: side * STAMP_LANE,
+        warn: STAMP_WARN,
+        slam: 0,
+        resolved: false,
+      })
+      const interval = STAMP_INTERVALS[boss.stampIndex % STAMP_INTERVALS.length] ?? STAMP_INTERVALS[0]
+      boss.stampCd += interval
+      boss.stampIndex += 1
+    }
+  }
+
+  for (const stamp of sim.stamps) {
+    if (!stamp.resolved) {
+      stamp.warn -= stepDt
+      if (stamp.warn > 0) continue
+      stamp.resolved = true
+      stamp.slam = STAMP_SLAM
+      const hit = sim.phase === 'play' && stampHits(sim, stamp.lane)
+      sim.events.push({ type: 'stamp', lane: stamp.lane, side: stamp.side, hit })
+      if (!hit) continue
+      sim.dogs = Math.max(0, sim.dogs - STAMP_DAMAGE)
+      if (sim.dogs <= 0) lose(sim)
+    } else {
+      stamp.slam -= stepDt
+    }
+  }
+  sim.stamps = sim.stamps.filter((stamp) => !stamp.resolved || stamp.slam > 0)
 }
 
 function resolveCats(sim: Sim): void {
@@ -328,6 +384,7 @@ export function step(sim: Sim, dt: number, targetLane: number | null): SimEvent[
 
   resolveGates(sim)
   resolveCats(sim)
+  resolveStamps(sim, stepDt)
 
   sim.gates = sim.gates.filter((gate) => !gate.passed || gate.flash > 0)
   sim.cats = sim.cats.filter((cat) => cat.alive && cat.dist > -80)

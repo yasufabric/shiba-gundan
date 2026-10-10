@@ -49,6 +49,16 @@ export interface Boss {
   flash: number
   spawnedAt: number
   stoppedAt: number | null
+  stampCd: number
+  stampIndex: number
+}
+
+export interface Stamp {
+  side: -1 | 1
+  lane: number
+  warn: number
+  slam: number
+  resolved: boolean
 }
 
 export interface Bullet {
@@ -68,6 +78,7 @@ export type SimEvent =
   | { type: 'gate'; good: boolean; lane: number; dist: number; dogsAfter: number; label: string }
   | { type: 'crate'; lane: number; dist: number; weapon: WeaponLevel }
   | { type: 'hurt'; lane: number; dist: number }
+  | { type: 'stamp'; lane: number; side: -1 | 1; hit: boolean }
   | { type: 'boss-down' }
   | { type: 'lose' }
 
@@ -83,6 +94,7 @@ export interface Sim {
   cats: Cat[]
   crates: Crate[]
   bullets: Bullet[]
+  stamps: Stamp[]
   boss: Boss | null
   clearedAt: number | null
   catLeaks: number
