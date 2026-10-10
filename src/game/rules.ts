@@ -1,4 +1,6 @@
 import {
+  BOSS_DOG_EXP,
+  BOSS_WEAPON_POWER,
   DOG_POWER_EXP,
   FORMATION,
   type GateDef,
@@ -13,6 +15,34 @@ export function clampWeapon(level: number): WeaponLevel {
 
 export function dogPower(dogs: number): number {
   return Math.pow(Math.max(1, dogs), DOG_POWER_EXP)
+}
+
+/**
+ * 10匹以上は弱い累乗。10匹未満は、肉球で削れた残りがボスを溶かしきらないように落とす。
+ */
+function bossDogFactor(dogs: number): number {
+  const counted = Math.max(1, dogs)
+  const atTen = Math.pow(10, BOSS_DOG_EXP)
+  if (counted >= 10) return Math.pow(counted, BOSS_DOG_EXP)
+  return atTen * Math.pow(counted / 10, 2)
+}
+
+/** ボスに当たった1発。合計は武器の係数 × 匹数の上乗せで、弾数では割る。 */
+export function bossBulletDamage(dogs: number, weapon: WeaponLevel, streams: number): number {
+  const power = BOSS_WEAPON_POWER[weapon] * bossDogFactor(dogs)
+  return power / Math.max(1, streams)
+}
+
+/**
+ * 次の肉球は左右どちらか。直前の2回と同じ側には落とさない。
+ * roll は 0 以上 1 未満。
+ */
+export function rollStampSide(recent: readonly (-1 | 1)[], roll: number): -1 | 1 {
+  const want: -1 | 1 = roll < 0.5 ? -1 : 1
+  const prev = recent[recent.length - 1]
+  const before = recent[recent.length - 2]
+  if (before !== undefined && before === prev && want === prev) return prev === -1 ? 1 : -1
+  return want
 }
 
 export function formationHalf(dogs: number): number {

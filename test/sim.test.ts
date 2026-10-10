@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { RED_GATE_AFTER, STAMP_DAMAGE, STAMP_WARN } from '../src/game/config'
-import { applyGate } from '../src/game/rules'
+import { applyGate, rollStampSide } from '../src/game/rules'
 import { createSim, step } from '../src/game/sim'
 import type { Army, Sim, SimEvent, WeaponLevel } from '../src/game/types'
 
@@ -34,8 +34,8 @@ function run(policy: Policy, stage = 1, maxTime = 120): { sim: Sim; events: Arra
 
 function dodgeLane(sim: Sim): number {
   const incoming = sim.stamps.find((stamp) => !stamp.resolved)
-  const side = incoming?.side ?? (sim.boss && sim.boss.stampIndex % 2 === 0 ? -1 : 1)
-  return side < 0 ? DODGE_LANE : -DODGE_LANE
+  if (!incoming) return 0
+  return incoming.side < 0 ? DODGE_LANE : -DODGE_LANE
 }
 
 function steer(
@@ -94,40 +94,21 @@ function summary(sim: Sim): string {
   })
 }
 
-test('何も届く前に豆柴は減らない', () => {
+test('湧いた直後のかたまりは道の幅に10匹以上いる', () => {
   const sim = createSim(1)
-  while (sim.time < 2.2) step(sim, DT, 0)
+  while (sim.time < 1.85) step(sim, DT, 0)
   assert.equal(sim.dogs, 5)
-  assert.ok(sim.cats.length > 0)
-  for (const cat of sim.cats) assert.ok(cat.dist > 500)
+  const alive = sim.cats.filter((cat) => cat.alive)
+  assert.ok(alive.length >= 10 && alive.length <= 20, String(alive.length))
+  const lanes = alive.map((cat) => cat.lane)
+  const span = Math.max(...lanes) - Math.min(...lanes)
+  assert.ok(span >= 1.4, String(span))
+  for (const cat of alive) assert.ok(cat.dist > 250 && cat.dist < 700)
 })
 
 function killSeconds(sim: Sim): number | null {
   if (sim.clearedAt === null || !sim.boss) return null
   return sim.clearedAt - sim.boss.spawnedAt
-}
-
-function fight(stage: number, weapon: WeaponLevel, maxTime = 160): { sim: Sim } {
-  const sim = createSim(stage)
-  const locked = new Map<number, -1 | 1>()
-  let wrongNext = true
-  let armed = false
-  const wrong = {
-    get v() {
-      return wrongNext
-    },
-    set v(value: boolean) {
-      wrongNext = value
-    },
-  }
-  while (sim.time < maxTime && sim.phase === 'play') {
-    if (sim.boss && sim.boss.stoppedAt !== null && !armed) {
-      sim.weapon = weapon
-      armed = true
-    }
-    step(sim, DT, steer(sim, 'good', locked, wrong))
-  }
-  return { sim }
 }
 
 test('良い門を選ぶと最大武器でボスを約6秒で倒す', () => {
@@ -196,7 +177,7 @@ test('肉球は影の0.8秒後に落ち、中央にいると5匹減る', () => {
         remain = stamp.warn
         warnAt = sim.time
         assert.ok(remain > STAMP_WARN - 0.05 && remain <= STAMP_WARN)
-        assert.equal(stamp.side, -1)
+        assert.ok(stamp.side === -1 || stamp.side === 1)
       }
     }
     const frame = step(sim, DT, 0)
@@ -213,15 +194,35 @@ test('肉球は影の0.8秒後に落ち、中央にいると5匹減る', () => {
   }
   assert.ok(seen)
   assert.ok(impacts.length >= 3)
-  assert.equal(impacts[0]?.side, -1)
-  assert.equal(impacts[1]?.side, 1)
+  let run = 1
   for (let i = 1; i < impacts.length; i += 1) {
     const prev = impacts[i - 1]
     const next = impacts[i]
     assert.ok(prev && next)
+    run = next.side === prev.side ? run + 1 : 1
+    assert.ok(run <= 2, impacts.map((impact) => impact.side).join(','))
     const gap = next.time - prev.time
     assert.ok(gap >= 2 && gap <= 3, String(gap))
   }
+})
+
+test('肉球は同じ側に3回続かない', () => {
+  let recent: Array<-1 | 1> = []
+  const sides: Array<-1 | 1> = []
+  for (let i = 0; i < 12; i += 1) {
+    const side = rollStampSide(recent, 0)
+    sides.push(side)
+    recent = [...recent, side].slice(-2)
+  }
+  assert.deepEqual(sides, [-1, -1, 1, -1, -1, 1, -1, -1, 1, -1, -1, 1])
+  recent = []
+  const right: Array<-1 | 1> = []
+  for (let i = 0; i < 5; i += 1) {
+    const side = rollStampSide(recent, 0.9)
+    right.push(side)
+    recent = [...recent, side].slice(-2)
+  }
+  assert.deepEqual(right, [1, 1, -1, 1, 1])
 })
 
 test('豆柴が5匹未満のときに肉球を食らうと0で負け', () => {
@@ -242,30 +243,49 @@ test('わざと悪い門を全部選ぶと負ける', () => {
   assert.equal(sim.dogs, 0)
 })
 
-test('ボスの体力は固定で、最弱は約20秒、最大は約6秒', () => {
-  const weak = fight(1, 0)
-  const mid = fight(1, 1)
-  const strong = fight(1, 2)
-  const weakKill = killSeconds(weak.sim)
-  const midKill = killSeconds(mid.sim)
-  const strongKill = killSeconds(strong.sim)
-  assert.equal(weak.sim.phase, 'clear', summary(weak.sim))
-  assert.equal(strong.sim.phase, 'clear', summary(strong.sim))
-  assert.ok(weakKill !== null && weakKill >= 17 && weakKill <= 24, summary(weak.sim))
-  assert.ok(strongKill !== null && strongKill >= 5 && strongKill <= 7.5, summary(strong.sim))
-  assert.ok(midKill !== null && weakKill !== null && strongKill !== null)
-  assert.ok(midKill < weakKill && midKill > strongKill, summary(mid.sim))
-  console.log(`ttk stage1 w0 ${summary(weak.sim)} w1 ${summary(mid.sim)} w2 ${summary(strong.sim)}`)
+function lockedBossFight(dogs: number, weapon: WeaponLevel, stage = 1): Sim {
+  const sim = createSim(stage)
+  sim.schedule = sim.schedule.filter((spawn) => spawn.kind !== 'cat')
+  while (sim.time < 180 && sim.phase === 'play') {
+    sim.dogs = dogs
+    sim.weapon = weapon
+    const lane = sim.boss && sim.boss.stoppedAt !== null ? dodgeLane(sim) : 0
+    step(sim, DT, lane)
+  }
+  return sim
+}
+
+test('ボスの体力は固定で、火力は武器が主で匹数は少しだけ', () => {
+  const counts = [10, 30, 50] as const
+  const table: Record<string, number> = {}
+  for (const weapon of [0, 1, 2] as const) {
+    for (const dogs of counts) {
+      const sim = lockedBossFight(dogs, weapon)
+      const kill = killSeconds(sim)
+      assert.equal(sim.phase, 'clear', summary(sim))
+      assert.ok(kill !== null, summary(sim))
+      table[`w${weapon}d${dogs}`] = kill
+    }
+  }
+  const at = (weapon: number, dogs: number) => {
+    const kill = table[`w${weapon}d${dogs}`]
+    assert.ok(kill !== undefined)
+    return kill
+  }
+  assert.ok(at(0, 10) >= 23 && at(0, 10) <= 27, String(at(0, 10)))
+  assert.ok(at(0, 50) >= 16.5 && at(0, 50) <= 19.5, String(at(0, 50)))
+  assert.ok(at(2, 50) >= 5.4 && at(2, 50) <= 6.8, String(at(2, 50)))
+  assert.ok(at(0, 10) > at(0, 30) && at(0, 30) > at(0, 50))
+  for (const dogs of counts) {
+    assert.ok(at(1, dogs) < at(0, dogs) && at(1, dogs) > at(2, dogs))
+  }
+  console.log(`boss ttk ${JSON.stringify(table)}`)
   for (const stage of [2, 3] as const) {
-    const laterWeak = fight(stage, 0)
-    const laterStrong = fight(stage, 2)
-    assert.equal(laterWeak.sim.phase, 'clear', summary(laterWeak.sim))
-    assert.equal(laterStrong.sim.phase, 'clear', summary(laterStrong.sim))
-    const laterWeakKill = killSeconds(laterWeak.sim)
-    const laterStrongKill = killSeconds(laterStrong.sim)
-    assert.ok(laterWeakKill !== null && laterWeakKill < 70, summary(laterWeak.sim))
-    assert.ok(laterStrongKill !== null && laterWeakKill !== null && laterStrongKill < laterWeakKill)
-    console.log(`ttk stage${stage} w0 ${summary(laterWeak.sim)} w2 ${summary(laterStrong.sim)}`)
+    const later = lockedBossFight(10, 0, stage)
+    assert.equal(later.phase, 'clear', summary(later))
+    const kill = killSeconds(later)
+    assert.ok(kill !== null && kill < 80, summary(later))
+    console.log(`boss ttk stage${stage} w0 d10 ${summary(later)}`)
   }
 })
 

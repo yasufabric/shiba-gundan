@@ -9,6 +9,7 @@ import {
   CRATE_HIT_HALF,
   CRATE_HP,
   FORMATION,
+  HORDE_SPAWN,
   LANE_SPEED,
   MAX_BULLETS,
   MAX_STREAMS,
@@ -27,7 +28,7 @@ import {
   WEAPONS,
 } from './config'
 import { buildSchedule, type Spawn } from './level'
-import { applyGate, clampWeapon, dogPower, formationHalf, gateLabel } from './rules'
+import { applyGate, bossBulletDamage, clampWeapon, dogPower, formationHalf, gateLabel, rollStampSide } from './rules'
 import type { Boss, Bullet, Cat, Crate, Gate, Sim, SimEvent, WeaponLevel } from './types'
 
 export function createSim(stage = 1): Sim {
@@ -91,7 +92,7 @@ function spawnOne(sim: Sim, item: Spawn): void {
       const cat: Cat = {
         id: sim.nextId++,
         lane: item.lane,
-        dist: SPAWN_DIST + item.depth,
+        dist: HORDE_SPAWN + item.depth,
         hp: item.hp,
         maxHp: item.hp,
         brute: item.brute,
@@ -126,6 +127,7 @@ function spawnOne(sim: Sim, item: Spawn): void {
         stoppedAt: null,
         stampCd: STAMP_FIRST_DELAY,
         stampIndex: 0,
+        stampSides: [],
       }
       sim.boss = boss
       return
@@ -153,6 +155,7 @@ function fire(sim: Sim): void {
         dist: BULLET_START,
         laneVel: spread,
         damage: power / streams,
+        bossDamage: bossBulletDamage(sim.dogs, sim.weapon, streams),
         weapon: sim.weapon,
         pellet,
         alive: true,
@@ -207,7 +210,9 @@ function resolveStamps(sim: Sim, stepDt: number): void {
   if (boss && boss.hp > 0 && boss.stoppedAt !== null) {
     boss.stampCd -= stepDt
     while (boss.stampCd <= 0) {
-      const side: -1 | 1 = boss.stampIndex % 2 === 0 ? -1 : 1
+      const side = rollStampSide(boss.stampSides, Math.random())
+      boss.stampSides.push(side)
+      if (boss.stampSides.length > 2) boss.stampSides.shift()
       sim.stamps.push({
         side,
         lane: side * STAMP_LANE,
@@ -311,7 +316,7 @@ function strike(sim: Sim, bullet: Bullet): void {
   if (Math.abs(bullet.dist - boss.dist) > BOSS_FACE) return
   if (Math.abs(bullet.lane) > BOSS_HIT_HALF) return
   bullet.alive = false
-  boss.hp -= bullet.damage
+  boss.hp -= bullet.bossDamage
   boss.flash = 1
   sim.events.push({ type: 'hit', lane: bullet.lane, dist: boss.dist, target: 'boss' })
   if (boss.hp <= 0 && sim.phase === 'play') {

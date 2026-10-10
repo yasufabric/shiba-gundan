@@ -399,7 +399,7 @@ function eye(ctx: CanvasRenderingContext2D, x: number, y: number, fur: Fur, angr
 function drawCat(ctx: CanvasRenderingContext2D, cat: Cat, time: number): void {
   const at = project(cat.lane, Math.max(0, cat.dist))
   const bob = Math.sin(time * 8 + cat.variant) * 1.4 * at.scale
-  const h = LOOK.catH * (cat.brute ? LOOK.bruteMul : 0.78) * at.scale
+  const h = LOOK.catH * (cat.brute ? LOOK.bruteMul : LOOK.hordeMul) * at.scale
   const fur = FURS[cat.variant] ?? FURS[0]
   if (cat.brute) paintCat(ctx, at.x, at.y + bob, h / 84, fur, false, cat.flash, time + cat.id)
   else paintHordeCat(ctx, at.x, at.y + bob, h / 84, fur, cat.flash)
