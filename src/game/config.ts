@@ -24,14 +24,14 @@ export const BULLET_START = 42
 export const BULLET_HIT_DIST = 36
 export const BULLET_HIT_LANE = 0.05
 /** 豆柴の数だけ弾が増える。この本数で頭打ち。 */
-export const MAX_STREAMS = 16
-export const MAX_BULLETS = 280
+export const MAX_STREAMS = 48
+export const MAX_BULLETS = 520
 /** 弾は隊列の位置ではなく、道の端から端まで散らす。 */
 export const VOLLEY_HALF = 0.92
 
 /**
  * ボスに当たった弾の合計威力。匹数の累乗は少しだけ。
- * 豆鉄砲は10匹で約25秒、50匹で約17秒。3方向撃ちは50匹で約7秒。体力は固定。
+ * 体力は固定。武器が上がるほど速く溶ける。匹数の差は小さい。
  * 10匹未満は肉球で崩れた隊列なので、残りだけではボスが溶けきらない。
  */
 export const BOSS_DOG_EXP = 0.23
@@ -52,10 +52,10 @@ export const CAT_SHOT = [1, 1, 2] as const
 export const WEAPON_CAP_DOGS = 1
 
 export const FORMATION = {
-  halfBase: 0.16,
-  halfPerDog: 0.01,
-  halfMax: 0.42,
-  showMax: 22,
+  halfBase: 0.14,
+  halfPerDog: 0.006,
+  halfMax: 0.5,
+  showMax: 36,
   catBody: 0.1,
 }
 
@@ -72,17 +72,18 @@ export interface GatePairDef {
 
 /**
  * 出現時刻。到達はおよそ time + SPAWN_DIST / SCROLL_SPEED 秒後。
- * どちらも得で、中身だけちがう。数か、武器か。
+ * 豆柴の門は +8〜+15。後半に ×2 を1回混ぜる。
+ * 武器の門は約10秒に1回で、2回取ると約30秒で最大。
+ * 最大になる時刻のあとは、豆柴どうし（+ か ×2）だけ。
  */
 export const GATE_PAIRS: readonly GatePairDef[] = [
-  { time: 5, left: { kind: 'add', amount: 2 }, right: { kind: 'weapon', amount: 1 } },
-  { time: 10, left: { kind: 'weapon', amount: 1 }, right: { kind: 'add', amount: 2 } },
-  { time: 15, left: { kind: 'add', amount: 2 }, right: { kind: 'weapon', amount: 1 } },
-  { time: 20, left: { kind: 'weapon', amount: 1 }, right: { kind: 'add', amount: 2 } },
-  { time: 25, left: { kind: 'add', amount: 2 }, right: { kind: 'weapon', amount: 1 } },
-  { time: 30, left: { kind: 'weapon', amount: 1 }, right: { kind: 'add', amount: 2 } },
-  { time: 35, left: { kind: 'add', amount: 2 }, right: { kind: 'weapon', amount: 1 } },
-  { time: 40, left: { kind: 'weapon', amount: 1 }, right: { kind: 'add', amount: 2 } },
+  { time: 5, left: { kind: 'add', amount: 8 }, right: { kind: 'add', amount: 10 } },
+  { time: 10, left: { kind: 'add', amount: 8 }, right: { kind: 'add', amount: 10 } },
+  { time: 15, left: { kind: 'weapon', amount: 1 }, right: { kind: 'add', amount: 15 } },
+  { time: 20, left: { kind: 'add', amount: 10 }, right: { kind: 'add', amount: 8 } },
+  { time: 25, left: { kind: 'add', amount: 10 }, right: { kind: 'weapon', amount: 1 } },
+  { time: 30, left: { kind: 'mul', amount: 2 }, right: { kind: 'add', amount: 10 } },
+  { time: 35, left: { kind: 'add', amount: 8 }, right: { kind: 'add', amount: 10 } },
 ]
 
 export const GATE_INTERVAL = 5
@@ -95,17 +96,17 @@ export interface HordeDef {
 
 /**
  * 道を端から端までふさぐ。撃ち漏らした猫は、届いたら必ず豆柴を1匹連れていく。
+ * 大きさは、普通に選んだときに想定される匹数へ合わせた固定値。実際の匹数では変えない。
  */
 export const HORDES: readonly HordeDef[] = [
-  { time: 1.7, count: 14, hp: 2 },
-  { time: 4.5, count: 12, hp: 1 },
-  { time: 11.2, count: 16, hp: 2 },
-  { time: 16.0, count: 16, hp: 6 },
-  { time: 21.0, count: 18, hp: 6 },
-  { time: 26.0, count: 16, hp: 6 },
-  { time: 31.0, count: 18, hp: 7 },
-  { time: 36.2, count: 18, hp: 7 },
-  { time: 41.0, count: 16, hp: 7 },
+  { time: 1.7, count: 12, hp: 2 },
+  { time: 9.9, count: 16, hp: 6 },
+  { time: 14.9, count: 18, hp: 7 },
+  { time: 19.9, count: 18, hp: 14 },
+  { time: 24.9, count: 18, hp: 16 },
+  { time: 29.9, count: 18, hp: 64 },
+  { time: 34.9, count: 20, hp: 96 },
+  { time: 39.9, count: 20, hp: 80 },
 ]
 
 /**
@@ -117,16 +118,16 @@ export const HORDE_SPAWN = 300
 export const HORDE_LANE = 1
 export const HORDE_DEPTH = 0
 export const HORDE_ROWS = 1
-export const HORDE_MAX = 20
+export const HORDE_MAX = 22
 
-/** 最初の20秒で1つ、40秒までにもう1つ。ボスの前に武器が最大まで届く位置。 */
-export const CRATE_TIMES = [8.2, 33.6] as const
+/** 武器の門と重ならない。門を2回取ったあとに壊れるので、最速の最大は門の側。 */
+export const CRATE_TIMES = [33, 39] as const
 export const CRATE_HP = 10
 export const CRATE_HIT_HALF = 0.48
 
 /** 45秒ごろに出す。体力は固定で、武器の段階では変えない。 */
 export const BOSS_SPAWN = 45
-export const BOSS_HP = 580
+export const BOSS_HP = 1500
 export const BOSS_STOP = 390
 export const BOSS_HIT_HALF = 1.05
 export const BOSS_FACE = 78

@@ -22,34 +22,48 @@ import { applyGate, gateLabel, isRedGate, stampLoss } from '../src/game/rules'
 test('豆柴は5匹から始まり、門は左右とも得で中身だけちがう', () => {
   assert.equal(START_DOGS, 5)
   assert.ok(GATE_PAIRS.length >= 4)
+  let doubles = 0
   for (const pair of GATE_PAIRS) {
     assert.equal(isRedGate(pair.left), false)
     assert.equal(isRedGate(pair.right), false)
-    assert.notEqual(pair.left.kind, pair.right.kind)
-    const kinds = [pair.left.kind, pair.right.kind].sort()
-    assert.deepEqual(kinds, ['add', 'weapon'])
+    const same = pair.left.kind === pair.right.kind && pair.left.amount === pair.right.amount
+    assert.equal(same, false)
     for (const op of [pair.left, pair.right]) {
-      if (op.kind === 'add') assert.ok(op.amount > 0)
-      if (op.kind === 'weapon') assert.ok(op.amount > 0)
+      if (op.kind === 'add') assert.ok(op.amount >= 8 && op.amount <= 15)
+      if (op.kind === 'mul') {
+        assert.equal(op.amount, 2)
+        doubles += 1
+      }
+      if (op.kind === 'weapon') assert.equal(op.amount, 1)
     }
   }
-  const first = GATE_PAIRS[0]
-  assert.ok(first)
-  assert.equal(gateLabel(first.left), '+2')
-  assert.equal(gateLabel(first.right), '武器↑')
+  assert.equal(doubles, 1)
+  const doubled = GATE_PAIRS.find((pair) => pair.left.kind === 'mul' || pair.right.kind === 'mul')
+  assert.ok(doubled && doubled.time >= 25)
   const army = { dogs: START_DOGS, weapon: 0 as const }
-  assert.equal(applyGate(army, first.left).army.dogs, 7)
-  assert.equal(applyGate(army, first.right).army.weapon, 1)
+  assert.equal(applyGate(army, { kind: 'add', amount: 10 }).army.dogs, 15)
+  assert.equal(applyGate(army, { kind: 'weapon', amount: 1 }).army.weapon, 1)
+  assert.equal(gateLabel({ kind: 'mul', amount: 2 }), '×2')
 })
 
-test('門は約5秒ごとに左右が入れ替わる', () => {
+test('武器の門は約10秒に1回で、最大のあとには出さない', () => {
+  const weaponTimes: number[] = []
   for (let i = 1; i < GATE_PAIRS.length; i += 1) {
     const prev = GATE_PAIRS[i - 1]
     const next = GATE_PAIRS[i]
     assert.ok(prev && next)
     assert.equal(next.time - prev.time, GATE_INTERVAL)
-    assert.notEqual(prev.left.kind, next.left.kind)
   }
+  for (const pair of GATE_PAIRS) {
+    const weapons = [pair.left, pair.right].filter((op) => op.kind === 'weapon')
+    assert.ok(weapons.length <= 1)
+    if (weapons.length === 1) weaponTimes.push(pair.time)
+  }
+  assert.deepEqual(weaponTimes, [15, 25])
+  const first = GATE_PAIRS.find((pair) => pair.time === 15)
+  const second = GATE_PAIRS.find((pair) => pair.time === 25)
+  assert.equal(first?.left.kind, 'weapon')
+  assert.equal(second?.right.kind, 'weapon')
 })
 
 test('武器が最大のとき武器↑は豆柴を1匹足す', () => {
@@ -61,13 +75,12 @@ test('武器が最大のとき武器↑は豆柴を1匹足す', () => {
   assert.equal(applyGate({ dogs: 4, weapon: 2 }, { kind: 'weapon', amount: -1 }).army.weapon, 1)
 })
 
-test('木箱は20秒以内と40秒以内に1つずつ、ボスは45秒', () => {
+test('木箱は武器の門が2回通ったあとに壊れ、ボスは45秒', () => {
   assert.equal(CRATE_TIMES.length, 2)
-  assert.ok(CRATE_TIMES[0] > 0 && CRATE_TIMES[0] <= 20)
-  assert.ok(CRATE_TIMES[1] > CRATE_TIMES[0] && CRATE_TIMES[1] <= 40)
+  assert.ok(CRATE_TIMES[0] >= 30 && CRATE_TIMES[0] <= 36)
+  assert.ok(CRATE_TIMES[1] > CRATE_TIMES[0] && CRATE_TIMES[1] < BOSS_SPAWN)
   assert.equal(BOSS_SPAWN, 45)
   assert.ok(BOSS_HP > 0)
-  assert.ok(CRATE_TIMES[1] < BOSS_SPAWN)
 })
 
 test('猫は道の端から端まで、10〜20匹の1列', () => {
@@ -77,7 +90,7 @@ test('猫は道の端から端まで、10〜20匹の1列', () => {
   let total = 0
   for (const horde of HORDES) {
     assert.ok(horde.count >= 10 && horde.count <= HORDE_MAX)
-    assert.ok(horde.hp > 0 && horde.hp <= 8)
+    assert.ok(horde.hp > 0)
     total += horde.count
   }
   assert.ok(total > 23)
