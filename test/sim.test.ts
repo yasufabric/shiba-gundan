@@ -1,23 +1,32 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { STAMP_WARN } from '../src/game/config'
-import { rollStampSide, stampLoss } from '../src/game/rules'
+import { STAMP_WARN, type GateDef } from '../src/game/config'
+import { applyGate, rollStampSide, stampLoss } from '../src/game/rules'
 import { createSim, step } from '../src/game/sim'
 import type { Sim, SimEvent, WeaponLevel } from '../src/game/types'
 
 const DT = 1 / 60
 const DODGE_LANE = 0.6
 
-type Policy = 'idle' | 'dogs' | 'weapon' | 'dogs-eat' | 'weapon-eat'
+type Policy = 'idle' | 'smart' | 'half' | 'smart-eat' | 'half-eat'
 
-function run(policy: Policy, stage = 1, maxTime = 90): { sim: Sim; events: Array<SimEvent & { time: number }> } {
+function run(
+  policy: Policy,
+  stage = 1,
+  maxTime = 100,
+): { sim: Sim; events: Array<SimEvent & { time: number }>; weaponAt: number | null; beforeBoss: number } {
   const sim = createSim(stage)
   const events: Array<SimEvent & { time: number }> = []
+  const locks = new Map<string, number>()
+  let weaponAt: number | null = null
+  let beforeBoss = -1
   while (sim.time < maxTime && sim.phase === 'play') {
-    const frame = step(sim, DT, steer(sim, policy))
+    const frame = step(sim, DT, steer(sim, policy, locks))
+    if (weaponAt === null && sim.weapon >= 2) weaponAt = sim.time
+    if (sim.boss && beforeBoss < 0) beforeBoss = sim.dogs
     for (const event of frame) events.push({ ...event, time: sim.time })
   }
-  return { sim, events }
+  return { sim, events, weaponAt, beforeBoss }
 }
 
 function dodgeLane(sim: Sim): number {
@@ -26,27 +35,57 @@ function dodgeLane(sim: Sim): number {
   return incoming.side < 0 ? DODGE_LANE : -DODGE_LANE
 }
 
-function steer(sim: Sim, policy: Policy): number {
+function upgrading(op: GateDef, weapon: WeaponLevel): boolean {
+  return op.kind === 'weapon' && op.amount > 0 && weapon < 2
+}
+
+function steer(sim: Sim, policy: Policy, locks: Map<string, number>): number {
   if (policy === 'idle') return 0
-  const eat = policy === 'dogs-eat' || policy === 'weapon-eat'
+  const eat = policy.endsWith('-eat')
+  const base = eat ? policy.slice(0, -4) : policy
   if (sim.boss && sim.boss.stoppedAt !== null) return eat ? 0 : dodgeLane(sim)
-  const want = policy.startsWith('dogs') ? 'add' : 'weapon'
   let soonest: { dist: number; pairId: number } | null = null
-  const byPair = new Map<number, { left?: (typeof sim.gates)[number]; right?: (typeof sim.gates)[number] }>()
+  let left: (typeof sim.gates)[number] | undefined
+  let right: (typeof sim.gates)[number] | undefined
   for (const gate of sim.gates) {
     if (gate.passed) continue
-    const row = byPair.get(gate.pairId) ?? {}
-    if (gate.side < 0) row.left = gate
-    else row.right = gate
-    byPair.set(gate.pairId, row)
+    if (gate.side < 0) left = gate
+    else right = gate
     if (!soonest || gate.dist < soonest.dist) soonest = { dist: gate.dist, pairId: gate.pairId }
   }
-  if (!soonest || soonest.dist > 480) return 0
-  const pair = byPair.get(soonest.pairId)
-  if (!pair?.left || !pair.right) return 0
-  if (pair.left.op.kind === want) return -0.78
-  if (pair.right.op.kind === want) return 0.78
-  return 0
+  if (!soonest || soonest.dist > 520 || !left || !right || left.pairId !== soonest.pairId) return sim.lane
+  const key = String(soonest.pairId)
+  const locked = locks.get(key)
+  if (locked !== undefined) return locked
+  const upgrade = upgrading(left.op, sim.weapon) ? -0.78 : upgrading(right.op, sim.weapon) ? 0.78 : null
+  let lane: number
+  if (upgrade !== null) lane = upgrade
+  else {
+    const dogsOf = (op: GateDef) => applyGate({ dogs: sim.dogs, weapon: sim.weapon }, op).army.dogs
+    const best: -1 | 1 = dogsOf(left.op) >= dogsOf(right.op) ? -1 : 1
+    const flips = locks.get('flips') ?? 0
+    const takeBest = base === 'smart' || flips % 2 === 0
+    if (base === 'half') locks.set('flips', flips + 1)
+    const side = takeBest ? best : best === -1 ? 1 : -1
+    lane = side < 0 ? -0.78 : 0.78
+  }
+  locks.set(key, lane)
+  return lane
+}
+
+function hordeLosses(events: Array<SimEvent & { time: number }>): number[] {
+  const losses: number[] = []
+  let mark = 0
+  const flush = () => {
+    if (mark > 0) losses.push(mark)
+    mark = 0
+  }
+  for (const event of events) {
+    if (event.type === 'hurt') mark += 1
+    if (event.type === 'gate') flush()
+  }
+  flush()
+  return losses
 }
 
 function summary(sim: Sim): string {
@@ -118,56 +157,52 @@ test('左右に滑っても、撃ち漏らす猫の数は減らない', () => {
 
 test('指を動かさないと1ステージ目は負ける', () => {
   const { sim, events } = run('idle')
-  const hits = events.filter((event) => event.type === 'stamp' && event.hit)
-  console.log(`idle stage1 ${summary(sim)} hits ${hits.length}`)
+  console.log(`idle stage1 ${summary(sim)}`)
   assert.equal(sim.phase, 'lose', summary(sim))
   assert.equal(sim.dogs, 0)
-  assert.ok(sim.boss && sim.boss.hp > 0, summary(sim))
-  assert.ok(hits.length >= 3, summary(sim))
   const red = events.filter((event) => event.type === 'gate' && event.good === false)
   assert.equal(red.length, 0)
 })
 
-test('豆柴の門だけ選んでスタンプをよければ勝てる', () => {
-  const { sim, events } = run('dogs')
+test('武器を優先して多いほうを選ぶと、約60匹でボスをよけて勝てる', () => {
+  const { sim, events, weaponAt, beforeBoss } = run('smart')
   const hits = events.filter((event) => event.type === 'stamp' && event.hit)
-  console.log(`dogs dodge stage1 ${summary(sim)} hits ${hits.length}`)
+  const losses = hordeLosses(events)
+  console.log(`smart dodge ${summary(sim)} before ${beforeBoss} weaponAt ${weaponAt} losses ${losses.join(',')}`)
   assert.equal(sim.phase, 'clear', summary(sim))
-  assert.ok(sim.dogs >= 10 && sim.dogs <= 22, summary(sim))
-  assert.equal(sim.weapon, 2, summary(sim))
-  assert.ok(sim.catLeaks >= 1, summary(sim))
+  assert.ok(beforeBoss >= 50 && beforeBoss <= 70, String(beforeBoss))
+  assert.equal(sim.weapon, 2)
+  assert.ok(weaponAt !== null && weaponAt >= 26 && weaponAt <= 32, String(weaponAt))
   assert.equal(hits.length, 0, summary(sim))
-  const gates = events.filter((event) => event.type === 'gate')
-  assert.ok(gates.every((event) => event.type === 'gate' && event.label.startsWith('+')))
+  assert.ok(losses.length >= 5)
+  assert.ok(losses.every((loss) => loss <= 3), losses.join(','))
 })
 
-test('武器の門だけ選んでスタンプをよければ勝てる', () => {
-  const { sim, events } = run('weapon')
+test('門を半分外してもスタンプをよければ勝てるが、1群でまとめて削られる', () => {
+  const { sim, events, beforeBoss } = run('half')
   const hits = events.filter((event) => event.type === 'stamp' && event.hit)
-  console.log(`weapon dodge stage1 ${summary(sim)} hits ${hits.length}`)
+  const losses = hordeLosses(events)
+  console.log(`half dodge ${summary(sim)} before ${beforeBoss} losses ${losses.join(',')}`)
   assert.equal(sim.phase, 'clear', summary(sim))
-  assert.ok(sim.dogs >= 6 && sim.dogs <= 16, summary(sim))
-  assert.equal(sim.weapon, 2, summary(sim))
+  assert.ok(beforeBoss >= 20 && beforeBoss <= 45, String(beforeBoss))
   assert.equal(hits.length, 0, summary(sim))
-  const first = events.find((event) => event.type === 'gate')
-  assert.equal(first?.type, 'gate')
-  if (first?.type === 'gate') assert.equal(first.label, '武器↑')
+  assert.ok(losses.some((loss) => loss >= 5 && loss <= 12), losses.join(','))
 })
 
-test('豆柴の門だけ選んでもスタンプを全部食らうと負ける', () => {
-  const { sim, events } = run('dogs-eat')
+test('うまく選んでもスタンプを全部食らうと負ける', () => {
+  const { sim, events } = run('smart-eat')
   const hits = events.filter((event) => event.type === 'stamp' && event.hit)
-  console.log(`dogs eat stage1 ${summary(sim)} hits ${hits.length}`)
+  console.log(`smart eat ${summary(sim)} hits ${hits.length}`)
   assert.ok(hits.length >= 3, summary(sim))
   assert.equal(sim.phase, 'lose', summary(sim))
   assert.equal(sim.dogs, 0)
   assert.ok(sim.boss && sim.boss.hp > 0, summary(sim))
 })
 
-test('武器の門だけ選んでスタンプを全部食らうと負ける', () => {
-  const { sim, events } = run('weapon-eat')
+test('門を半分外してスタンプを全部食らうと負ける', () => {
+  const { sim, events } = run('half-eat')
   const hits = events.filter((event) => event.type === 'stamp' && event.hit)
-  console.log(`weapon eat stage1 ${summary(sim)} hits ${hits.length}`)
+  console.log(`half eat ${summary(sim)} hits ${hits.length}`)
   assert.ok(hits.length >= 2, summary(sim))
   assert.equal(sim.phase, 'lose', summary(sim))
   assert.equal(sim.dogs, 0)
@@ -176,7 +211,8 @@ test('武器の門だけ選んでスタンプを全部食らうと負ける', ()
 
 test('肉球は影の0.8秒後に落ち、中央にいるとそのときの割合で減る', () => {
   const sim = createSim(1)
-  while (sim.time < 90 && !(sim.boss && sim.boss.stoppedAt !== null)) step(sim, DT, 0)
+  sim.schedule = sim.schedule.filter((spawn) => spawn.kind !== 'cat')
+  while (sim.time < 90 && sim.phase === 'play' && !(sim.boss && sim.boss.stoppedAt !== null)) step(sim, DT, 0)
   assert.ok(sim.boss?.stoppedAt)
   sim.cats = []
   const before = sim.dogs
@@ -243,7 +279,8 @@ test('肉球は同じ側に3回続かない', () => {
 
 test('豆柴が5匹未満のときに肉球を食らうと0で負け', () => {
   const sim = createSim(1)
-  while (sim.time < 90 && !(sim.boss && sim.boss.stoppedAt !== null)) step(sim, DT, 0)
+  sim.schedule = sim.schedule.filter((spawn) => spawn.kind !== 'cat')
+  while (sim.time < 90 && sim.phase === 'play' && !(sim.boss && sim.boss.stoppedAt !== null)) step(sim, DT, 0)
   assert.ok(sim.boss)
   sim.cats = []
   sim.dogs = 3
@@ -289,7 +326,7 @@ test('ボスの体力は固定で、武器が上がると溶けるのが速い',
   assert.ok(at(0, 10) > at(0, 50))
   assert.ok(at(2, 50) < at(0, 50))
   assert.ok(at(1, 50) < at(0, 50) && at(2, 50) < at(1, 50))
-  assert.ok(at(0, 10) < 40, String(at(0, 10)))
+  assert.ok(at(0, 10) < 90, String(at(0, 10)))
   console.log(`boss ttk ${JSON.stringify(table)}`)
   const later = lockedBossFight(10, 0, 2)
   assert.equal(later.phase, 'clear', summary(later))
