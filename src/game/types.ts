@@ -1,14 +1,8 @@
 import type { GateDef } from './config'
 import type { Spawn } from './level'
 
-export type WeaponLevel = 0 | 1 | 2
 export type Phase = 'play' | 'clear' | 'lose'
 export type GateTone = 'blue' | 'red'
-
-export interface Army {
-  dogs: number
-  weapon: WeaponLevel
-}
 
 export interface Gate {
   id: number
@@ -18,6 +12,10 @@ export interface Gate {
   op: GateDef
   passed: boolean
   flash: number
+  /** 数字が変わったときの跳ね。1 で最大。 */
+  pop: number
+  /** ドラム缶を壊さずに通り過ぎた側は、もう弾が数字を増やさない。 */
+  sealed: boolean
 }
 
 export interface Cat {
@@ -32,8 +30,9 @@ export interface Cat {
   alive: boolean
 }
 
-export interface Crate {
+export interface Drum {
   id: number
+  side: -1 | 1
   lane: number
   dist: number
   hp: number
@@ -49,39 +48,26 @@ export interface Boss {
   flash: number
   spawnedAt: number
   stoppedAt: number | null
-  stampCd: number
-  stampIndex: number
-  /** 直近の落下側。同じ側が3回続かないように見る。 */
-  stampSides: Array<-1 | 1>
-}
-
-export interface Stamp {
-  side: -1 | 1
-  lane: number
-  warn: number
-  slam: number
-  resolved: boolean
 }
 
 export interface Bullet {
+  kind: 'pellet' | 'rocket'
   lane: number
   dist: number
-  laneVel: number
   damage: number
   bossDamage: number
-  weapon: WeaponLevel
-  pellet: number
   alive: boolean
 }
 
 export type SimEvent =
-  | { type: 'shoot'; weapon: WeaponLevel }
-  | { type: 'hit'; lane: number; dist: number; target: 'cat' | 'crate' | 'boss' }
+  | { type: 'shoot' }
+  | { type: 'hit'; lane: number; dist: number; target: 'cat' | 'drum' | 'gate' | 'boss' }
   | { type: 'cat-down'; lane: number; dist: number; brute: boolean }
+  | { type: 'gate-bump'; lane: number; dist: number; label: string; tone: GateTone; flipped: boolean }
   | { type: 'gate'; good: boolean; lane: number; dist: number; dogsAfter: number; label: string }
-  | { type: 'crate'; lane: number; dist: number; weapon: WeaponLevel }
-  | { type: 'hurt'; lane: number; dist: number }
-  | { type: 'stamp'; lane: number; side: -1 | 1; hit: boolean }
+  | { type: 'drum'; lane: number; dist: number }
+  | { type: 'hurt'; lane: number; dist: number; loss: number }
+  | { type: 'rocket' }
   | { type: 'boss-down' }
   | { type: 'lose' }
 
@@ -90,14 +76,13 @@ export interface Sim {
   time: number
   phase: Phase
   dogs: number
-  weapon: WeaponLevel
   lane: number
   fireCd: number
+  rocketCd: number
   gates: Gate[]
   cats: Cat[]
-  crates: Crate[]
+  drums: Drum[]
   bullets: Bullet[]
-  stamps: Stamp[]
   boss: Boss | null
   clearedAt: number | null
   catLeaks: number

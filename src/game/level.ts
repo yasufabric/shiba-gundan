@@ -1,7 +1,6 @@
 import {
   BOSS_HP,
   BOSS_SPAWN,
-  CRATE_TIMES,
   GATE_PAIRS,
   HORDES,
   HORDE_DEPTH,
@@ -14,6 +13,7 @@ import {
   STAGE_CAT_HP_STEP,
   STAGE_LATE_CAT_AFTER,
   STAGE_LATE_CAT_HP_STEP,
+  type DrumDef,
   type GateDef,
   type HordeDef,
 } from './config'
@@ -23,6 +23,7 @@ export interface GateSpawn {
   time: number
   left: GateDef
   right: GateDef
+  drum: DrumDef | null
 }
 
 export interface CatSpawn {
@@ -35,18 +36,13 @@ export interface CatSpawn {
   depth: number
 }
 
-export interface CrateSpawn {
-  kind: 'crate'
-  time: number
-}
-
 export interface BossSpawn {
   kind: 'boss'
   time: number
   hp: number
 }
 
-export type Spawn = GateSpawn | CatSpawn | CrateSpawn | BossSpawn
+export type Spawn = GateSpawn | CatSpawn | BossSpawn
 
 export function catHpMul(stage: number): number {
   return 1 + (stage - 1) * STAGE_CAT_HP_STEP
@@ -89,10 +85,15 @@ export function buildSchedule(stage: number): Spawn[] {
   const safeStage = Math.max(1, Math.floor(stage))
   const spawns: Spawn[] = []
   for (const pair of GATE_PAIRS) {
-    spawns.push({ kind: 'gates', time: pair.time, left: pair.left, right: pair.right })
+    spawns.push({
+      kind: 'gates',
+      time: pair.time,
+      left: { kind: pair.left.kind, amount: pair.left.amount },
+      right: { kind: pair.right.kind, amount: pair.right.amount },
+      drum: pair.drum ? { side: pair.drum.side, hp: pair.drum.hp } : null,
+    })
   }
   HORDES.forEach((horde, index) => pushHorde(spawns, safeStage, horde, index))
-  for (const time of CRATE_TIMES) spawns.push({ kind: 'crate', time })
   spawns.push({ kind: 'boss', time: BOSS_SPAWN, hp: bossMaxHp(safeStage) })
   spawns.sort((a, b) => a.time - b.time || a.kind.localeCompare(b.kind))
   return spawns

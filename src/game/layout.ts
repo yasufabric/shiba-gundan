@@ -26,19 +26,22 @@ export function project(lane: number, dist: number): Projected {
   }
 }
 
+/** 横幅は道の3分の1で止める。あふれた豆柴は後ろへ列を足す。80匹を超えた分は間隔を詰める。 */
 export function beanOffsets(dogs: number, spread: number): { lane: number; dist: number }[] {
-  const count = Math.min(FORMATION.showMax, Math.max(0, Math.floor(dogs)))
-  const half = formationHalf(Math.max(dogs, 1)) * spread
+  const count = Math.min(FORMATION.drawMax, Math.max(0, Math.floor(dogs)))
+  const tight = dogs <= FORMATION.drawMax ? 1 : Math.max(FORMATION.packMin, FORMATION.drawMax / Math.max(1, dogs))
+  const half = formationHalf(Math.max(dogs, 1)) * spread * tight
+  const perRow = Math.max(1, Math.min(count, Math.floor((half * 2) / (FORMATION.body * tight)) || 1))
   const slots: { lane: number; dist: number }[] = []
   let left = count
   let row = 0
   while (left > 0) {
-    const rowCount = Math.min(left, row + 2)
+    const rowCount = Math.min(left, perRow)
     for (let i = 0; i < rowCount; i += 1) {
       const u = rowCount === 1 ? 0 : (i / (rowCount - 1)) * 2 - 1
       slots.push({
-        lane: u * half * (0.62 + row * 0.2),
-        dist: -18 - row * 22,
+        lane: u * half,
+        dist: -16 - row * FORMATION.rowGap * tight,
       })
     }
     left -= rowCount
