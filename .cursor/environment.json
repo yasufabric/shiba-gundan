@@ -1,0 +1,17 @@
+{
+  "name": "shiba-gundan",
+  "install": "npm ci",
+  "terminals": [
+    {
+      "name": "dev",
+      "command": "npm run dev",
+      "description": "Vite dev server for shiba-gundan, served at http://localhost:5173/shiba-gundan/"
+    }
+  ],
+  "ports": [
+    {
+      "name": "vite dev server",
+      "port": 5173
+    }
+  ]
+}

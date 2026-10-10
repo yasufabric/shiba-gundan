@@ -1,0 +1,16 @@
+{
+  "name": "柴犬軍団",
+  "short_name": "柴犬軍団",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#140820",
+  "theme_color": "#140820",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
