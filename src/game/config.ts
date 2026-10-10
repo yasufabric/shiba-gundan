@@ -27,10 +27,18 @@ export const MAX_STREAMS = 10
 export const MAX_BULLETS = 280
 
 /**
- * 1発の威力は匹数の弱い累乗。
- * ボス体力は武器では変えない。良い門取りの隊列で、豆鉄砲が約20秒、3方向撃ちが約6秒。
+ * 猫や木箱への1発の威力は匹数の弱い累乗。
+ * ボスへの火力は別で、武器の段階がほぼ全部を決める。
  */
 export const DOG_POWER_EXP = 0.37
+
+/**
+ * ボスに当たった弾の合計威力。匹数の累乗は少しだけ。
+ * 豆鉄砲は10匹で約25秒、50匹で約18秒。3方向撃ちは50匹で約6秒。体力は固定。
+ * 10匹未満は肉球で崩れた隊列なので、残りだけではボスが溶けきらない。
+ */
+export const BOSS_DOG_EXP = 0.23
+export const BOSS_WEAPON_POWER = [3.15, 3.15, 1.75] as const
 
 export const WEAPONS = [
   { name: '豆鉄砲', interval: 0.24, pellets: 1, spread: 0 },
@@ -83,20 +91,26 @@ export interface HordeDef {
  * 弾が当たる列はまとめて溶け、触れた1匹につき豆柴が1匹減る。
  */
 export const HORDES: readonly HordeDef[] = [
-  { time: 1.7, count: 12, hp: 2 },
-  { time: 7.3, count: 14, hp: 2 },
-  { time: 12.5, count: 16, hp: 3 },
-  { time: 17.3, count: 16, hp: 3 },
-  { time: 22.4, count: 18, hp: 3 },
-  { time: 27.4, count: 18, hp: 3 },
-  { time: 32.3, count: 16, hp: 4 },
-  { time: 37.4, count: 18, hp: 4 },
-  { time: 42.1, count: 14, hp: 4 },
+  { time: 1.7, count: 18, hp: 1 },
+  { time: 7.3, count: 15, hp: 1 },
+  { time: 12.5, count: 18, hp: 1 },
+  { time: 17.3, count: 18, hp: 1 },
+  { time: 22.4, count: 18, hp: 1 },
+  { time: 27.4, count: 15, hp: 1 },
+  { time: 32.3, count: 18, hp: 1 },
+  { time: 37.4, count: 18, hp: 1 },
+  { time: 42.1, count: 15, hp: 1 },
 ]
 
-/** かたまりは道の左右いっぱいに並べ、前後を少しずらして一塊に見せる。 */
-export const HORDE_LANE = 0.88
-export const HORDE_DEPTH = 18
+/**
+ * 湧く位置は道がまだ幅を持っているあたり。
+ * 手前の地平線に重ねると、10匹以上いても2匹に見える。
+ */
+export const HORDE_SPAWN = 360
+/** かたまりは道の左右いっぱいに、前後3列で密集させる。奇数列は半歩ずらす。 */
+export const HORDE_LANE = 0.92
+export const HORDE_DEPTH = 140
+export const HORDE_ROWS = 3
 export const HORDE_MAX = 20
 
 /** 最初の20秒で1つ、40秒までにもう1つ。ボスの前に武器が最大まで届く位置。 */
@@ -104,7 +118,7 @@ export const CRATE_TIMES = [8.2, 33.6] as const
 export const CRATE_HP = 10
 export const CRATE_HIT_HALF = 0.48
 
-/** 45秒ごろに出す。体力は固定。最大武器で約6秒、最弱武器で約20秒。 */
+/** 45秒ごろに出す。体力は固定で、武器の段階では変えない。 */
 export const BOSS_SPAWN = 45
 export const BOSS_HP = 580
 export const BOSS_STOP = 390
@@ -113,7 +127,7 @@ export const BOSS_FACE = 78
 
 /**
  * ボスが止まってから落とす肉球スタンプ。
- * 左右どちらかのレーンに影を出してから着地し、隊列が重なると豆柴が減る。
+ * 左右どちらかのレーンに影を出してから着地する。同じ側は2回まで。
  */
 export const STAMP_WARN = 0.8
 export const STAMP_DAMAGE = 5
@@ -137,7 +151,8 @@ export const LOOK = {
   horizonY: 250,
   captainY: 640,
   halfNear: 178,
-  halfFar: 38,
+  /** 奥でも道幅を残す。狭いと大群が重なって2匹に見える。 */
+  halfFar: 96,
   scaleNear: 1,
   scaleFar: 0.26,
   curve: 0.8,
@@ -145,6 +160,8 @@ export const LOOK = {
   captainH: 138,
   beanH: 54,
   catH: 118,
+  /** 大群の猫。通常より少し小さく、道の幅に列が並んで見える大きさ。 */
+  hordeMul: 0.82,
   bruteMul: 1.16,
   bossMul: 2.65,
   gateH: 124,

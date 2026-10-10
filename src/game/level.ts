@@ -7,6 +7,7 @@ import {
   HORDE_DEPTH,
   HORDE_LANE,
   HORDE_MAX,
+  HORDE_ROWS,
   STAGE2_HORDE_EXTRA,
   STAGE2_HORDE_EXTRA_AFTER,
   STAGE_BOSS_HP_STEP,
@@ -63,17 +64,22 @@ function pushHorde(out: Spawn[], stage: number, horde: HordeDef, index: number):
   const extra = stage > 1 && horde.time >= STAGE2_HORDE_EXTRA_AFTER ? STAGE2_HORDE_EXTRA : 0
   const count = Math.max(1, Math.min(HORDE_MAX, horde.count + extra))
   const hp = horde.hp * (horde.time >= STAGE_LATE_CAT_AFTER ? lateCatHpMul(stage) : catHpMul(stage))
+  const rows = Math.min(HORDE_ROWS, count)
+  const cols = Math.ceil(count / rows)
   for (let i = 0; i < count; i += 1) {
-    const u = count === 1 ? 0.5 : i / (count - 1)
+    const row = Math.min(rows - 1, Math.floor(i / cols))
+    const col = i - row * cols
+    const inRow = Math.min(cols, count - row * cols)
+    const u = inRow <= 1 ? 0.5 : row % 2 === 0 ? col / (inRow - 1) : (col + 0.5) / inRow
     const lane = -HORDE_LANE + u * HORDE_LANE * 2
     out.push({
       kind: 'cat',
       time: horde.time,
-      lane,
+      lane: Math.max(-0.94, Math.min(0.94, lane)),
       hp,
       brute: false,
       variant: (index + i) % 4,
-      depth: (i % 3) * HORDE_DEPTH,
+      depth: row * HORDE_DEPTH,
     })
   }
 }

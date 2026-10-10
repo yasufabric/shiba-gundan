@@ -200,7 +200,7 @@ export class Game {
       case 'cat-down':
         this.shake = Math.max(this.shake, event.brute ? 6 : 1.2)
         this.sfx.catDown(event.brute)
-        this.burstAt(event.lane, event.dist, ['#ffd15a', '#ff8a3a', '#fff6df', '#ff4ad8'], event.brute ? 12 : 4)
+        this.burstAt(event.lane, event.dist, ['#ffd15a', '#ff8a3a', '#fff6df', '#ff4ad8'], event.brute ? 12 : 6)
         return
       case 'stamp':
         this.shake = Math.max(this.shake, event.hit ? 14 : 10)

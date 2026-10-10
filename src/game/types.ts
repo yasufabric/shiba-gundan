@@ -51,6 +51,8 @@ export interface Boss {
   stoppedAt: number | null
   stampCd: number
   stampIndex: number
+  /** 直近の落下側。同じ側が3回続かないように見る。 */
+  stampSides: Array<-1 | 1>
 }
 
 export interface Stamp {
@@ -66,6 +68,7 @@ export interface Bullet {
   dist: number
   laneVel: number
   damage: number
+  bossDamage: number
   weapon: WeaponLevel
   pellet: number
   alive: boolean
