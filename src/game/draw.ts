@@ -1,16 +1,8 @@
-import {
-  LOOK,
-  SCROLL_SPEED,
-  STAMP_SLAM,
-  STAMP_WARN,
-  VIEW_H,
-  VIEW_W,
-  WEAPONS,
-} from './config'
+import { LOOK, SCROLL_SPEED, VIEW_H, VIEW_W } from './config'
 import { beanOffsets, project } from './layout'
-import { gateLabel, gateTone } from './rules'
+import { countFontSize, gateLabel, gateTone } from './rules'
 import type { SpriteSet } from './sprites'
-import type { Bullet, Cat, Crate, Gate, Sim, WeaponLevel } from './types'
+import type { Bullet, Cat, Drum, Gate, Sim } from './types'
 
 export interface Particle {
   x: number
@@ -119,6 +111,10 @@ function drawSprite(
 ): void {
   if (!img.complete || img.naturalWidth === 0) return
   const w = h * (img.naturalWidth / img.naturalHeight)
+  if (tilt === 0) {
+    ctx.drawImage(img, x - w / 2, y - h, w, h)
+    return
+  }
   ctx.save()
   ctx.translate(x, y)
   ctx.rotate(tilt)
@@ -256,7 +252,7 @@ function drawRoad(ctx: CanvasRenderingContext2D, time: number): void {
   }
 }
 
-function drawGate(ctx: CanvasRenderingContext2D, gate: Gate, weapon: WeaponLevel): void {
+function drawGate(ctx: CanvasRenderingContext2D, gate: Gate): void {
   const dist = Math.max(0, gate.dist)
   const sideLane = gate.side < 0 ? -0.52 : 0.52
   const at = project(sideLane, dist)
@@ -265,17 +261,22 @@ function drawGate(ctx: CanvasRenderingContext2D, gate: Gate, weapon: WeaponLevel
   const width = Math.max(54, Math.abs(edge.x - mid.x) * 0.9)
   const height = LOOK.gateH * at.scale
   const tone = gateTone(gate.op)
-  const x = at.x - width / 2
-  const y = at.y - height * 0.72
+  const pop = gate.pop
+  const swell = 1 + pop * 0.22
+  const hop = pop * 22 * Math.max(0.45, at.scale)
+  const x = -width / 2
+  const y = -height * 0.72
   ctx.save()
-  if (gate.flash > 0) ctx.globalAlpha = 0.55 + gate.flash * 0.45
+  ctx.translate(at.x, at.y - hop)
+  ctx.scale(swell, swell)
+  if (gate.flash > 0) ctx.globalAlpha = 0.72 + gate.flash * 0.28
   const glow = ctx.createLinearGradient(x, y, x, y + height)
   if (tone === 'blue') {
-    glow.addColorStop(0, '#8fd4ff')
-    glow.addColorStop(0.5, '#2f7dff')
+    glow.addColorStop(0, '#b9ecff')
+    glow.addColorStop(0.45, '#3b8dff')
     glow.addColorStop(1, '#163a9a')
   } else {
-    glow.addColorStop(0, '#ffd0dc')
+    glow.addColorStop(0, '#ffe0e8')
     glow.addColorStop(0.45, '#ff3d62')
     glow.addColorStop(1, '#9a1038')
   }
@@ -283,85 +284,72 @@ function drawGate(ctx: CanvasRenderingContext2D, gate: Gate, weapon: WeaponLevel
   ctx.fillStyle = glow
   ctx.fill()
   ctx.lineWidth = Math.max(3, 7 * at.scale)
-  ctx.strokeStyle = gate.flash > 0.4 ? '#fff6df' : INK
+  ctx.strokeStyle = gate.flash > 0.2 ? '#fff6df' : INK
   ctx.stroke()
 
   ctx.fillStyle = 'rgba(255,255,255,0.28)'
   roundRect(ctx, x + 6 * at.scale, y + 6 * at.scale, width - 12 * at.scale, height * 0.28, 8 * at.scale)
   ctx.fill()
 
-  const label = gateLabel(gate.op, weapon)
-  const fontSize = Math.max(16, (label.length > 2 ? 34 : 46) * at.scale)
+  const label = gateLabel(gate.op)
+  const fontSize = Math.max(18, (label.length > 3 ? 30 : label.length > 2 ? 36 : 48) * at.scale) * (1 + pop * 0.18)
   ctx.font = `${fontSize}px ${FONT}`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.lineWidth = Math.max(2, fontSize * 0.12)
   ctx.strokeStyle = INK
-  ctx.strokeText(label, at.x, y + height * 0.58)
+  ctx.strokeText(label, 0, y + height * 0.58)
   ctx.fillStyle = '#fffdf8'
-  ctx.fillText(label, at.x, y + height * 0.58)
+  ctx.fillText(label, 0, y + height * 0.58)
   if (gate.flash > 0) {
     ctx.globalCompositeOperation = 'lighter'
-    ctx.fillStyle = `rgba(255,255,255,${gate.flash * 0.65})`
+    ctx.fillStyle = `rgba(255,255,255,${0.35 + gate.flash * 0.65})`
     roundRect(ctx, x, y, width, height, 16 * at.scale)
     ctx.fill()
   }
   ctx.restore()
 }
 
-function paintCrate(ctx: CanvasRenderingContext2D, crate: Crate): void {
-  const at = project(crate.lane, Math.max(0, crate.dist))
-  const h = LOOK.crateH * at.scale
-  const w = h * 1.2
+function paintDrum(ctx: CanvasRenderingContext2D, drum: Drum): void {
+  const at = project(drum.lane, Math.max(0, drum.dist))
+  const h = LOOK.drumH * at.scale
+  const w = h * 0.92
   const x = at.x - w / 2
-  const y = at.y - h * 0.86
+  const y = at.y - h * 0.9
   ctx.save()
   ctx.fillStyle = 'rgba(0,0,0,0.3)'
   ctx.beginPath()
-  ctx.ellipse(at.x, at.y + 2, w * 0.4, Math.max(3, h * 0.1), 0, 0, Math.PI * 2)
+  ctx.ellipse(at.x, at.y + 2, w * 0.42, Math.max(3, h * 0.1), 0, 0, Math.PI * 2)
   ctx.fill()
-  roundRect(ctx, x, y, w, h, 8 * at.scale)
-  const wood = ctx.createLinearGradient(x, y, x + w, y + h)
-  wood.addColorStop(0, '#f0c36a')
-  wood.addColorStop(0.55, '#d3923c')
-  wood.addColorStop(1, '#a86a28')
-  ctx.fillStyle = wood
-  ctx.fill()
-  ctx.lineWidth = Math.max(2.5, 4 * at.scale)
-  ctx.strokeStyle = INK
-  ctx.stroke()
-  ctx.strokeStyle = 'rgba(90, 48, 18, 0.55)'
-  ctx.lineWidth = Math.max(1.5, 3 * at.scale)
   ctx.beginPath()
-  ctx.moveTo(x + 4, y + h * 0.38)
-  ctx.lineTo(x + w - 4, y + h * 0.38)
-  ctx.moveTo(x + 4, y + h * 0.68)
-  ctx.lineTo(x + w - 4, y + h * 0.68)
-  ctx.stroke()
-  ctx.fillStyle = '#efe7d4'
-  ctx.strokeStyle = INK
+  ctx.ellipse(at.x, y + h * 0.16, w * 0.5, Math.max(4, h * 0.12), 0, 0, Math.PI * 2)
+  ctx.fillStyle = '#fff6df'
+  ctx.fill()
   ctx.lineWidth = Math.max(2, 3 * at.scale)
-  const cx = at.x
-  const cy = y + h * 0.5
-  ctx.beginPath()
-  ctx.moveTo(cx - 8 * at.scale, cy + 6 * at.scale)
-  ctx.lineTo(cx, cy - 10 * at.scale)
-  ctx.lineTo(cx + 8 * at.scale, cy + 6 * at.scale)
-  ctx.closePath()
-  fillStroke(ctx, '#d6ff3a', Math.max(2, 3 * at.scale))
-  if (crate.hp < crate.maxHp) {
-    ctx.strokeStyle = '#4a2810'
-    ctx.lineWidth = 2
-    ctx.beginPath()
-    ctx.moveTo(x + w * 0.3, y + 4)
-    ctx.lineTo(x + w * 0.55, y + h * 0.55)
-    ctx.lineTo(x + w * 0.7, y + h - 4)
-    ctx.stroke()
+  ctx.strokeStyle = INK
+  ctx.stroke()
+  roundRect(ctx, x, y + h * 0.16, w, h * 0.78, 8 * at.scale)
+  const body = ctx.createLinearGradient(x, y, x + w, y)
+  body.addColorStop(0, '#6d5a86')
+  body.addColorStop(0.45, '#c9bdd8')
+  body.addColorStop(1, '#3a2c4e')
+  ctx.fillStyle = body
+  ctx.fill()
+  ctx.stroke()
+  ctx.fillStyle = '#d6ff3a'
+  ctx.fillRect(x + 2, y + h * 0.42, w - 4, Math.max(6, h * 0.16))
+  ctx.strokeRect(x + 2, y + h * 0.42, w - 4, Math.max(6, h * 0.16))
+  if (drum.hp < drum.maxHp) {
+    const ratio = Math.max(0, drum.hp / drum.maxHp)
+    ctx.fillStyle = INK
+    ctx.fillRect(x, y + h * 0.95, w, 4)
+    ctx.fillStyle = '#d6ff3a'
+    ctx.fillRect(x, y + h * 0.95, w * ratio, 4)
   }
-  if (crate.flash > 0) {
+  if (drum.flash > 0) {
     ctx.globalCompositeOperation = 'lighter'
-    ctx.fillStyle = `rgba(255,255,255,${crate.flash * 0.45})`
-    roundRect(ctx, x, y, w, h, 8 * at.scale)
+    ctx.fillStyle = `rgba(255,255,255,${drum.flash * 0.55})`
+    roundRect(ctx, x, y + h * 0.16, w, h * 0.78, 8 * at.scale)
     ctx.fill()
   }
   ctx.restore()
@@ -647,93 +635,37 @@ function paintHordeCat(
   ctx.restore()
 }
 
-function drawPawMark(ctx: CanvasRenderingContext2D, scale: number, inked: boolean): void {
-  ctx.save()
-  ctx.scale(scale, scale * 0.82)
-  const pad = inked ? '#ff7a2a' : '#1a1024'
-  const toe = inked ? '#ff9344' : '#140c18'
-  const bean = inked ? '#ffe0c2' : '#2a2030'
-  const toes: Array<[number, number]> = [
-    [-26, -30],
-    [-9, -40],
-    [9, -40],
-    [26, -30],
-  ]
-  for (const [x, y] of toes) {
-    ctx.beginPath()
-    ctx.ellipse(x, y, 13, 15, 0, 0, Math.PI * 2)
-    fillStroke(ctx, toe, inked ? 3 : 2)
-    ctx.beginPath()
-    ctx.ellipse(x, y + 2, 6, 7, 0, 0, Math.PI * 2)
-    ctx.fillStyle = bean
-    ctx.fill()
-  }
-  ctx.beginPath()
-  ctx.ellipse(0, 4, 28, 18, 0, 0, Math.PI * 2)
-  fillStroke(ctx, pad, inked ? 3.5 : 2)
-  ctx.beginPath()
-  ctx.ellipse(0, 6, 14, 9, 0, 0, Math.PI * 2)
-  ctx.fillStyle = bean
-  ctx.fill()
-  ctx.restore()
-}
-
-function drawStamps(ctx: CanvasRenderingContext2D, sim: Sim): void {
-  for (const stamp of sim.stamps) {
-    const at = project(stamp.lane, 16)
-    ctx.save()
-    ctx.translate(at.x, at.y + 10)
-    if (!stamp.resolved) {
-      const t = 1 - Math.max(0, stamp.warn) / STAMP_WARN
-      const w = 34 + t * 52
-      const h = 14 + t * 16
-      ctx.fillStyle = `rgba(10, 6, 14, ${0.28 + t * 0.48})`
-      ctx.beginPath()
-      ctx.ellipse(0, 6, w, h, 0, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.globalAlpha = 0.12 + t * 0.28
-      drawPawMark(ctx, 0.55 + t * 0.2, false)
-    } else {
-      const t = Math.max(0, stamp.slam / STAMP_SLAM)
-      ctx.globalAlpha = Math.min(1, t * 1.5)
-      drawPawMark(ctx, 1.18 - t * 0.12, true)
-    }
-    ctx.restore()
-  }
-}
-
 function drawBullet(ctx: CanvasRenderingContext2D, bullet: Bullet): void {
   const at = project(bullet.lane, bullet.dist)
-  const behind = project(bullet.lane - bullet.laneVel * 0.05, bullet.dist - 28)
-  const colors = ['#d6ff3a', '#fff4b0', '#7af0ff']
-  const color = bullet.weapon >= 2 ? colors[bullet.pellet] ?? colors[0] : bullet.weapon === 1 ? '#fff1a8' : '#c6ff4a'
+  const trail = bullet.kind === 'rocket' ? 46 : 28
+  const behind = project(bullet.lane, bullet.dist - trail)
+  const color = bullet.kind === 'rocket' ? '#ffb43a' : '#d6ff3a'
   ctx.strokeStyle = color
   ctx.globalAlpha = 0.85
-  ctx.lineWidth = bullet.weapon === 0 ? 3 : 2
+  ctx.lineWidth = bullet.kind === 'rocket' ? 7 : 3
   ctx.beginPath()
   ctx.moveTo(behind.x, behind.y)
   ctx.lineTo(at.x, at.y)
   ctx.stroke()
   ctx.globalAlpha = 1
-  ctx.fillStyle = color
+  ctx.fillStyle = bullet.kind === 'rocket' ? '#fff6df' : color
   ctx.beginPath()
-  ctx.arc(at.x, at.y, (bullet.weapon === 0 ? 5 : 3.5) * Math.max(0.45, at.scale), 0, Math.PI * 2)
+  ctx.arc(at.x, at.y, (bullet.kind === 'rocket' ? 11 : 5) * Math.max(0.45, at.scale), 0, Math.PI * 2)
   ctx.fill()
+  ctx.lineWidth = 2
+  ctx.strokeStyle = INK
+  ctx.stroke()
 }
 
 function drawArmy(ctx: CanvasRenderingContext2D, state: RenderState): void {
   const { sim, sprites } = state
   const spread = 1 + state.burst * 0.95
   const slots = beanOffsets(sim.dogs, spread)
+  const wave = Math.sin(state.time * 9) * 2
   slots.forEach((slot, index) => {
     const at = project(sim.lane + slot.lane, slot.dist)
-    const bob = Math.sin(state.time * 9 + index) * 2
     const h = LOOK.beanH * at.scale * (1 + state.burst * 0.18)
-    ctx.fillStyle = 'rgba(0,0,0,0.25)'
-    ctx.beginPath()
-    ctx.ellipse(at.x, at.y + 2, h * 0.28, h * 0.08, 0, 0, Math.PI * 2)
-    ctx.fill()
-    drawSprite(ctx, sprites.idle, at.x, at.y + bob, h, Math.sin(state.time * 4 + index) * 0.04)
+    drawSprite(ctx, sprites.idle, at.x, at.y + (index % 2 === 0 ? wave : -wave), h)
   })
 
   const captain = project(sim.lane, 0)
@@ -755,15 +687,15 @@ function drawArmy(ctx: CanvasRenderingContext2D, state: RenderState): void {
 
   const pop = 1 + state.numPop * 0.35
   const label = String(sim.dogs)
-  const fontSize = 28 * pop
+  const fontSize = countFontSize(sim.dogs) * pop
   ctx.font = `${fontSize}px ${FONT}`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   const tw = ctx.measureText(label).width
-  const bw = Math.max(36, tw + 18) * pop
-  const bh = 32 * pop
+  const bw = Math.max(fontSize, tw + fontSize * 0.55)
+  const bh = fontSize * 1.15
   const bx = captain.x - bw / 2
-  const by = captain.y - h - 18 - jump
+  const by = captain.y - h - bh * 0.35 - jump
   roundRect(ctx, bx, by, bw, bh, 10)
   ctx.fillStyle = '#fff6df'
   ctx.fill()
@@ -825,20 +757,6 @@ function drawFlyers(ctx: CanvasRenderingContext2D, state: RenderState): void {
   }
 }
 
-function drawPips(ctx: CanvasRenderingContext2D, weapon: number): void {
-  for (let i = 0; i < WEAPONS.length; i += 1) {
-    const x = VIEW_W - 22 - (WEAPONS.length - 1 - i) * 16
-    const y = 46
-    ctx.beginPath()
-    ctx.arc(x, y, 5.5, 0, Math.PI * 2)
-    ctx.fillStyle = i <= weapon ? '#d6ff3a' : '#2a2038'
-    ctx.fill()
-    ctx.lineWidth = 2
-    ctx.strokeStyle = INK
-    ctx.stroke()
-  }
-}
-
 function drawBossBar(ctx: CanvasRenderingContext2D, sim: Sim): void {
   const boss = sim.boss
   if (!boss) return
@@ -894,26 +812,70 @@ function drawResult(ctx: CanvasRenderingContext2D, state: RenderState): void {
   ctx.restore()
 }
 
-function drawWorldItem(ctx: CanvasRenderingContext2D, state: RenderState, kind: 'gate' | 'crate' | 'cat' | 'bullet', index: number): void {
+function drawWorldItem(
+  ctx: CanvasRenderingContext2D,
+  state: RenderState,
+  kind: 'gate' | 'drum' | 'cat' | 'bullet',
+  index: number,
+): void {
   const { sim } = state
   switch (kind) {
-    case 'gate':
-      drawGate(ctx, sim.gates[index], state.sim.weapon)
+    case 'gate': {
+      const gate = sim.gates[index]
+      if (gate) drawGate(ctx, gate)
       return
-    case 'crate':
-      paintCrate(ctx, sim.crates[index])
+    }
+    case 'drum': {
+      const drum = sim.drums[index]
+      if (drum) paintDrum(ctx, drum)
       return
-    case 'cat':
-      drawCat(ctx, sim.cats[index], state.time)
+    }
+    case 'cat': {
+      const cat = sim.cats[index]
+      if (cat) drawCat(ctx, cat, state.time)
       return
-    case 'bullet':
-      drawBullet(ctx, sim.bullets[index])
+    }
+    case 'bullet': {
+      const bullet = sim.bullets[index]
+      if (bullet) drawBullet(ctx, bullet)
       return
+    }
     default: {
       const unknown: never = kind
       void unknown
     }
   }
+}
+
+let backdrop: HTMLCanvasElement | null = null
+let backdropKey = ''
+
+function paintVignette(ctx: CanvasRenderingContext2D): void {
+  const vignette = ctx.createRadialGradient(VIEW_W / 2, VIEW_H / 2, 180, VIEW_W / 2, VIEW_H / 2, 520)
+  vignette.addColorStop(0, 'rgba(0,0,0,0)')
+  vignette.addColorStop(1, 'rgba(0,0,0,0.28)')
+  ctx.fillStyle = vignette
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H)
+}
+
+/** 空・ビル・道・端の暗がり。サイズが変わるまで同じ絵を貼る。 */
+function ensureBackdrop(pixelW: number, pixelH: number): HTMLCanvasElement {
+  const key = `${pixelW}x${pixelH}`
+  if (backdrop && backdropKey === key) return backdrop
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, pixelW)
+  canvas.height = Math.max(1, pixelH)
+  const baked = canvas.getContext('2d')
+  if (baked) {
+    baked.setTransform(canvas.width / VIEW_W, 0, 0, canvas.height / VIEW_H, 0, 0)
+    drawSky(baked, 0)
+    drawBuildings(baked, 0)
+    drawRoad(baked, 0)
+    paintVignette(baked)
+  }
+  backdrop = canvas
+  backdropKey = key
+  return canvas
 }
 
 export function render(ctx: CanvasRenderingContext2D, state: RenderState): void {
@@ -923,27 +885,24 @@ export function render(ctx: CanvasRenderingContext2D, state: RenderState): void 
   const oy = Math.cos(state.time * 37) * mag
   ctx.save()
   ctx.translate(ox, oy)
-  drawSky(ctx, state.time)
-  drawBuildings(ctx, state.time)
-  drawRoad(ctx, state.time)
+  const plate = ensureBackdrop(ctx.canvas.width, ctx.canvas.height)
+  ctx.drawImage(plate, 0, 0, VIEW_W, VIEW_H)
 
-  const order: { dist: number; kind: 'gate' | 'crate' | 'cat' | 'bullet'; index: number }[] = []
+  const order: { dist: number; kind: 'gate' | 'drum' | 'cat' | 'bullet'; index: number }[] = []
   state.sim.gates.forEach((gate, index) => order.push({ dist: gate.dist, kind: 'gate', index }))
-  state.sim.crates.forEach((crate, index) => order.push({ dist: crate.dist, kind: 'crate', index }))
+  state.sim.drums.forEach((drum, index) => order.push({ dist: drum.dist, kind: 'drum', index }))
   state.sim.cats.forEach((cat, index) => order.push({ dist: cat.dist, kind: 'cat', index }))
   state.sim.bullets.forEach((bullet, index) => order.push({ dist: bullet.dist, kind: 'bullet', index }))
   order.sort((a, b) => b.dist - a.dist)
   for (const item of order) drawWorldItem(ctx, state, item.kind, item.index)
   drawBoss(ctx, state.sim, state.time)
   drawArmy(ctx, state)
-  drawStamps(ctx, state.sim)
   drawFlyers(ctx, state)
   ctx.restore()
 
   drawParticles(ctx, state.particles)
   drawFloaters(ctx, state.floaters)
   drawBossBar(ctx, state.sim)
-  drawPips(ctx, state.sim.weapon)
 
   if (state.flash > 0) {
     ctx.fillStyle = state.flashColor
@@ -951,11 +910,6 @@ export function render(ctx: CanvasRenderingContext2D, state: RenderState): void 
     ctx.fillRect(0, 0, VIEW_W, VIEW_H)
     ctx.globalAlpha = 1
   }
-  const vignette = ctx.createRadialGradient(VIEW_W / 2, VIEW_H / 2, 180, VIEW_W / 2, VIEW_H / 2, 520)
-  vignette.addColorStop(0, 'rgba(0,0,0,0)')
-  vignette.addColorStop(1, 'rgba(0,0,0,0.28)')
-  ctx.fillStyle = vignette
-  ctx.fillRect(0, 0, VIEW_W, VIEW_H)
   drawResult(ctx, state)
 }
 

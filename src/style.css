@@ -76,6 +76,25 @@ body {
   color: var(--lime);
 }
 
+#rocket {
+  position: absolute;
+  right: 14px;
+  bottom: 28px;
+  z-index: 2;
+  width: 76px;
+  height: 76px;
+  padding: 6px;
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  background: #fff6df url('./assets/shiba/shiba-idle.png') center 58% / 78% no-repeat;
+  box-shadow: 0 0 0 4px #d6ff3a;
+}
+
+#rocket[aria-disabled='true'] {
+  filter: grayscale(0.7) brightness(0.7);
+  box-shadow: none;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

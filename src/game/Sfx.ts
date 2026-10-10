@@ -103,6 +103,7 @@ export class Sfx {
   private shotAt = 0
   private hitAt = 0
   private catAt = 0
+  private tickAt = 0
   muted: boolean
 
   constructor(muted = false) {
@@ -144,21 +145,51 @@ export class Sfx {
     return { ctx, out: this.master }
   }
 
-  shoot(weapon: number): void {
+  shoot(): void {
     const now = this.ctx?.currentTime ?? 0
     if (now - this.shotAt < 0.07) return
     const live = this.live()
     if (!live) return
     this.shotAt = live.ctx.currentTime
-    const freq = weapon >= 2 ? 680 : weapon === 1 ? 760 : 540
     tone(live.ctx, live.out, live.ctx.currentTime, {
       type: 'square',
-      freq,
-      to: freq * 0.55,
+      freq: 620,
+      to: 340,
       glide: 0.05,
+      peak: 0.04,
+      decay: 0.05,
+    })
+  }
+
+  gateTick(): void {
+    const live = this.live()
+    if (!live) return
+    if (live.ctx.currentTime - this.tickAt < 0.06) return
+    this.tickAt = live.ctx.currentTime
+    tone(live.ctx, live.out, live.ctx.currentTime, {
+      type: 'square',
+      freq: 880,
+      to: 1320,
+      glide: 0.04,
       peak: 0.045,
       decay: 0.05,
     })
+  }
+
+  rocket(): void {
+    const live = this.live()
+    if (!live) return
+    const t = live.ctx.currentTime
+    noise(live.ctx, live.out, t, { filter: 'bandpass', freq: 420, to: 140, q: 0.8, peak: 0.16, decay: 0.22 })
+    tone(live.ctx, live.out, t, { type: 'sawtooth', freq: 180, to: 70, glide: 0.18, peak: 0.06, decay: 0.2 })
+  }
+
+  drum(): void {
+    const live = this.live()
+    if (!live) return
+    const t = live.ctx.currentTime
+    noise(live.ctx, live.out, t, { filter: 'bandpass', freq: 240, to: 90, q: 1.2, peak: 0.16, decay: 0.16 })
+    tone(live.ctx, live.out, t, { type: 'triangle', freq: 160, to: 60, glide: 0.1, peak: 0.08, decay: 0.12 })
   }
 
   hit(): void {
@@ -186,15 +217,6 @@ export class Sfx {
     noise(live.ctx, live.out, t, { filter: 'bandpass', freq: 900, to: 240, q: 0.8, peak: brute ? 0.1 : 0.06, decay: 0.08 })
   }
 
-  stamp(): void {
-    const live = this.live()
-    if (!live) return
-    const t = live.ctx.currentTime
-    noise(live.ctx, live.out, t, { filter: 'lowpass', freq: 220, to: 40, q: 0.8, peak: 0.42, decay: 0.32 })
-    tone(live.ctx, live.out, t, { type: 'sine', freq: 92, to: 28, glide: 0.22, peak: 0.32, decay: 0.28 })
-    tone(live.ctx, live.out, t, { type: 'triangle', freq: 70, to: 36, glide: 0.16, peak: 0.12, decay: 0.2, delay: 0.02 })
-  }
-
   gateGood(): void {
     const live = this.live()
     if (!live) return
@@ -210,16 +232,6 @@ export class Sfx {
     const t = live.ctx.currentTime
     tone(live.ctx, live.out, t, { type: 'sawtooth', freq: 240, to: 80, glide: 0.16, peak: 0.05, decay: 0.16 })
     tone(live.ctx, live.out, t, { type: 'square', freq: 180, to: 70, glide: 0.14, peak: 0.04, decay: 0.14, delay: 0.02 })
-  }
-
-  weaponUp(): void {
-    const live = this.live()
-    if (!live) return
-    const t = live.ctx.currentTime
-    tone(live.ctx, live.out, t, { type: 'square', freq: 392, peak: 0.07, decay: 0.08 })
-    tone(live.ctx, live.out, t, { type: 'square', freq: 523, peak: 0.07, decay: 0.1, delay: 0.07 })
-    tone(live.ctx, live.out, t, { type: 'triangle', freq: 784, peak: 0.08, decay: 0.18, delay: 0.14 })
-    noise(live.ctx, live.out, t, { filter: 'highpass', freq: 1800, peak: 0.06, decay: 0.08 })
   }
 
   bossDown(): void {

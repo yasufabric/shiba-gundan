@@ -10,6 +10,7 @@ const stage: Stage = {
   canvas: must<HTMLCanvasElement>('game'),
   frame: must('frame'),
   mute: must<HTMLButtonElement>('mute'),
+  rocket: must<HTMLButtonElement>('rocket'),
   live: must('live'),
 }
 

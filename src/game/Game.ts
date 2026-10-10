@@ -1,4 +1,4 @@
-import { VIEW_H, VIEW_W, WEAPONS } from './config'
+import { VIEW_H, VIEW_W } from './config'
 import type { Floater, Flyer, Particle, RenderState } from './draw'
 import { render, worldPoint } from './draw'
 import { Sfx, loadMuted } from './Sfx'
@@ -10,6 +10,7 @@ export interface Stage {
   canvas: HTMLCanvasElement
   frame: HTMLElement
   mute: HTMLButtonElement
+  rocket: HTMLButtonElement
   live: HTMLElement
 }
 
@@ -19,6 +20,7 @@ export class Game {
   private readonly canvas: HTMLCanvasElement
   private readonly frame: HTMLElement
   private readonly mute: HTMLButtonElement
+  private readonly rocket: HTMLButtonElement
   private readonly live: HTMLElement
   private readonly ctx: CanvasRenderingContext2D
   private readonly sprites = loadSprites()
@@ -40,6 +42,11 @@ export class Game {
   private clock = 0
   private slow = 1
   private pointing = false
+  private pendingRocket = false
+  private flipHold = 0
+  private flipLabel = ''
+  private rocketHold = 0
+  private clashHold = 0
   private targetLane = 0
   private prevLane = 0
   private laneVel = 0
@@ -51,6 +58,7 @@ export class Game {
     this.canvas = stage.canvas
     this.frame = stage.frame
     this.mute = stage.mute
+    this.rocket = stage.rocket
     this.live = stage.live
     this.ctx = ctx
     this.sfx = new Sfx(loadMuted())
@@ -76,6 +84,13 @@ export class Game {
       this.sfx.toggle()
       this.paintMute()
     })
+    this.rocket.addEventListener('pointerdown', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      this.sfx.unlock()
+      if (this.rocket.hidden || this.rocket.disabled) return
+      this.pendingRocket = true
+    })
     void document.fonts.load('42px "Dela Gothic One"')
     requestAnimationFrame((now) => this.frameOf(now))
   }
@@ -93,14 +108,14 @@ export class Game {
     const cssH = Math.max(1, Math.floor(VIEW_H * scale))
     this.frame.style.width = `${cssW}px`
     this.frame.style.height = `${cssH}px`
-    const dpr = Math.min(window.devicePixelRatio || 1, 3)
+    const dpr = Math.min(window.devicePixelRatio || 1, 2)
     this.canvas.width = Math.floor(VIEW_W * dpr)
     this.canvas.height = Math.floor(VIEW_H * dpr)
     this.canvas.style.width = `${cssW}px`
     this.canvas.style.height = `${cssH}px`
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     this.ctx.imageSmoothingEnabled = true
-    this.ctx.imageSmoothingQuality = 'high'
+    this.ctx.imageSmoothingQuality = 'low'
   }
 
   private laneFromEvent(event: PointerEvent): number {
@@ -175,7 +190,9 @@ export class Game {
 
   private tick(dt: number): void {
     const before = this.sim.dogs
-    const events = step(this.sim, dt, this.pointing ? this.targetLane : null)
+    const rocket = this.pendingRocket
+    this.pendingRocket = false
+    const events = step(this.sim, dt, this.pointing ? this.targetLane : null, rocket)
     if (this.sim.dogs > before) this.burst = 1
     if (this.sim.dogs < before) this.launch(before - this.sim.dogs)
     if (this.sim.dogs !== before) this.numPop = 1
@@ -190,23 +207,28 @@ export class Game {
     switch (event.type) {
       case 'shoot':
         this.recoil = 1
-        this.sfx.shoot(event.weapon)
+        this.sfx.shoot()
         return
       case 'hit':
-        this.sfx.hit()
+        if (event.target !== 'gate') this.sfx.hit()
         if (event.target === 'boss') this.shake = Math.max(this.shake, 2.2)
-        this.puff(event.lane, event.dist, event.target === 'boss' ? '#ffd15a' : '#fff6df', 3)
+        if (event.target !== 'gate') this.puff(event.lane, event.dist, event.target === 'boss' ? '#ffd15a' : '#fff6df', 3)
         return
       case 'cat-down':
         this.shake = Math.max(this.shake, event.brute ? 6 : 1.2)
         this.sfx.catDown(event.brute)
         this.burstAt(event.lane, event.dist, ['#ffd15a', '#ff8a3a', '#fff6df', '#ff4ad8'], event.brute ? 12 : 6)
         return
-      case 'stamp':
-        this.shake = Math.max(this.shake, event.hit ? 14 : 10)
-        this.sfx.stamp()
-        this.flashColor = 'rgba(32, 10, 16, 0.85)'
-        this.flash = event.hit ? 0.24 : 0.1
+      case 'gate-bump':
+        this.sfx.gateTick()
+        if (event.flipped) {
+          this.flipLabel = event.label
+          this.flipHold = 0.55
+          this.shake = Math.max(this.shake, 6)
+          this.flashColor = event.tone === 'blue' ? 'rgba(140, 210, 255, 0.95)' : 'rgba(255, 80, 110, 0.95)'
+          this.flash = 0.34
+          this.burstAt(event.lane, event.dist, event.tone === 'blue' ? ['#8fd4ff', '#fff'] : ['#ff4d6a', '#ffd0dc'], 14)
+        }
         return
       case 'gate': {
         const at = worldPoint(event.lane, 18)
@@ -226,31 +248,22 @@ export class Game {
         this.burstAt(event.lane, 10, event.good ? ['#8fd4ff', '#fff'] : ['#ff4d6a', '#ffd0dc'], 16)
         return
       }
-      case 'crate':
-        this.shake = Math.max(this.shake, 6)
-        this.sfx.weaponUp()
-        this.flashColor = 'rgba(214, 255, 58, 0.85)'
-        this.flash = 0.3
-        this.floaters.push({
-          x: worldPoint(event.lane, event.dist).x,
-          y: worldPoint(event.lane, event.dist).y - 30,
-          text: WEAPONS[event.weapon].name,
-          life: 0.8,
-          max: 0.8,
-          color: '#d6ff3a',
-        })
-        this.burstAt(event.lane, event.dist, ['#e8b15a', '#d6ff3a', '#fff6df'], 14)
+      case 'drum':
+        this.shake = Math.max(this.shake, 5)
+        this.sfx.drum()
+        this.burstAt(event.lane, event.dist, ['#c9bdd8', '#d6ff3a', '#fff6df'], 12)
         return
       case 'hurt': {
         this.shake = Math.max(this.shake, 8)
         this.sfx.gateBad()
         this.burstAt(event.lane, event.dist, ['#ff8a3a', '#ff4ad8', '#ffd15a', '#fff6df'], 10)
         this.burstAt(this.sim.lane, 8, ['#fff6df', '#d6ff3a', '#7dffb0', '#ffd15a'], 8)
+        if (event.loss === 1) this.clashHold = 0.4
         const at = worldPoint(event.lane, Math.max(0, event.dist))
         this.floaters.push({
           x: at.x,
           y: at.y - 28,
-          text: '−1',
+          text: `−${event.loss}`,
           life: 0.7,
           max: 0.7,
           color: '#ffd0dc',
@@ -270,6 +283,13 @@ export class Game {
         })
         return
       }
+      case 'rocket':
+        this.rocketHold = 0.5
+        this.shake = Math.max(this.shake, 7)
+        this.sfx.rocket()
+        this.flashColor = 'rgba(255, 180, 58, 0.9)'
+        this.flash = 0.2
+        return
       case 'boss-down':
         this.shake = 16
         this.flash = 0.85
@@ -364,6 +384,9 @@ export class Game {
     this.burst = Math.max(0, this.burst - dt * 1.6)
     this.numPop = Math.max(0, this.numPop - dt * 2.4)
     this.recoil = Math.max(0, this.recoil - dt * 8)
+    this.flipHold = Math.max(0, this.flipHold - dt)
+    this.rocketHold = Math.max(0, this.rocketHold - dt)
+    this.clashHold = Math.max(0, this.clashHold - dt)
     if (this.slow < 1) {
       this.slow = Math.min(1, this.slow + dt * 0.7)
     }
@@ -396,14 +419,19 @@ export class Game {
     this.frame.dataset.time = this.sim.time.toFixed(2)
     this.frame.dataset.phase = this.sim.phase
     this.frame.dataset.dogs = String(this.sim.dogs)
-    this.frame.dataset.weapon = String(this.sim.weapon)
     this.frame.dataset.stage = String(this.sim.stage)
     this.frame.dataset.boss = this.sim.boss ? String(Math.max(0, Math.ceil(this.sim.boss.hp))) : ''
     this.frame.dataset.cats = String(this.sim.cats.length)
-    const warning = this.sim.stamps.find((stamp) => !stamp.resolved)
-    const slamming = this.sim.stamps.some((stamp) => stamp.resolved)
-    this.frame.dataset.stamp = warning ? 'warn' : slamming ? 'slam' : ''
-    this.frame.dataset.stampWarn = warning ? warning.warn.toFixed(2) : ''
+    this.frame.dataset.flip = this.flipHold > 0 ? this.flipLabel : ''
+    this.frame.dataset.clash = this.clashHold > 0 ? '1' : ''
+    const bossUp = Boolean(this.sim.boss && this.sim.boss.hp > 0 && this.sim.phase === 'play')
+    const ready = bossUp && this.sim.rocketCd <= 0
+    this.rocket.hidden = !bossUp
+    this.rocket.disabled = !ready
+    this.rocket.setAttribute('aria-disabled', ready ? 'false' : 'true')
+    if (this.rocketHold > 0) this.frame.dataset.rocket = 'shot'
+    else if (!bossUp) this.frame.dataset.rocket = ''
+    else this.frame.dataset.rocket = ready ? 'ready' : 'cool'
     if (this.sim.phase === 'clear') this.syncLive(false, 'クリア')
     else if (this.sim.phase === 'lose') this.syncLive(false, 'ざんねん')
   }
