@@ -33,10 +33,10 @@ export const CAT_DOG_EXP = 0.5
 
 /** ボスへの1斉射の合計。体力は固定で、匹数の平方根だけ効く。 */
 export const BOSS_POWER = 7.5
-export const BOSS_DOG_EXP = 0.5
+export const BOSS_DOG_EXP = 0.85
 
 /** ボス戦で隊長アイコンを押したときのロケット。 */
-export const ROCKET_DAMAGE = 900
+export const ROCKET_DAMAGE = 650
 export const ROCKET_COOLDOWN = 1.7
 export const ROCKET_SPEED = 980
 
@@ -84,14 +84,22 @@ export interface GatePairDef {
 /**
  * 出現時刻。到達はおよそ time + SPAWN_DIST / SCROLL_SPEED 秒後。
  * 最初の2組は、弾が当たらなくても増える青い門だけ。
- * 赤い門と ÷ は 15 秒をすぎてから。× の手前のドラム缶は撃って壊す。
+ * 赤い門は 15 秒をすぎてから。そのあとの × は、撃っても ×2 で止まる。
  */
 export const GATE_PAIRS: readonly GatePairDef[] = [
   { time: 4, left: { kind: 'add', amount: 12 }, right: { kind: 'add', amount: 4 }, drum: null },
-  { time: 10, left: { kind: 'mul', amount: 2 }, right: { kind: 'add', amount: 6 }, drum: { side: 'left', hp: 302 } },
-  { time: 16, left: { kind: 'add', amount: -120 }, right: { kind: 'mul', amount: -16 }, drum: { side: 'right', hp: 1600 } },
-  { time: 23, left: { kind: 'add', amount: 4 }, right: { kind: 'add', amount: 12 }, drum: null },
+  { time: 10, left: { kind: 'add', amount: 10 }, right: { kind: 'add', amount: 6 }, drum: null },
+  { time: 16, left: { kind: 'add', amount: -120 }, right: { kind: 'add', amount: -200 }, drum: null },
+  { time: 23, left: { kind: 'mul', amount: 2 }, right: { kind: 'add', amount: -9 }, drum: { side: 'left', hp: 48 } },
+  { time: 30, left: { kind: 'add', amount: -72 }, right: { kind: 'add', amount: -64 }, drum: null },
 ]
+
+/**
+ * 始まってからこの秒数をすぎた × は、撃ってもこの数で止まる。
+ * それより前に出た × は、弾の数だけ育つ。
+ */
+export const LATE_MUL_AFTER = 15
+export const LATE_MUL_CAP = 2
 
 /** 門の左右のあいだ。ここにある弾はどちらの門にも当たらない。 */
 export const GATE_GAP = 0.08
@@ -119,25 +127,26 @@ export interface HordeDef {
 }
 
 /**
- * 道を横切る猫の群れ。大きさは、普通に選んだときに想定される匹数へ合わせた固定値。
+ * 後半の猫の群れ。大きさは 300 匹の想定で決めた固定値で、群れごとに同じ。
  * 実際の匹数では変えない。隊列に重なった猫だけが豆柴を連れていく。
  */
 export const HORDES: readonly HordeDef[] = [
-  { time: 20.4, count: 114, hp: 800 },
-  { time: 27.4, count: 208, hp: 900 },
-  { time: 32.2, count: 148, hp: 900 },
-  { time: 37.0, count: 102, hp: 900 },
+  { time: 27.2, count: 210, hp: 1600 },
+  { time: 36.2, count: 210, hp: 1600 },
 ]
 
 export const HORDE_SPAWN = 300
 export const HORDE_LANE = 1
 export const HORDE_DEPTH = 0
 export const HORDE_ROWS = 1
-export const HORDE_MAX = 220
+export const HORDE_MAX = 240
 
-export const BOSS_SPAWN = 44
-export const BOSS_HP = 7200
-export const BOSS_STOP = 390
+export const BOSS_SPAWN = 41
+export const BOSS_HP = 61000
+/** 隊列へ歩く速さ。湧いてから届くまでおよそ20秒。 */
+export const BOSS_SPEED = 44
+/** この距離まで来てまだ生きていれば、隊列に届いて負け。 */
+export const BOSS_REACH = 36
 export const BOSS_HIT_HALF = 1.05
 export const BOSS_FACE = 78
 
@@ -163,7 +172,7 @@ export const LOOK = {
   catH: 118,
   hordeMul: 1.05,
   bruteMul: 1.16,
-  bossMul: 2.65,
+  bossMul: 3.15,
   gateH: 124,
   drumH: 78,
 }

@@ -1,4 +1,13 @@
-import { BOSS_DOG_EXP, BOSS_POWER, CAT_DOG_EXP, CAT_HIT, FORMATION, type GateDef } from './config'
+import {
+  BOSS_DOG_EXP,
+  BOSS_POWER,
+  CAT_DOG_EXP,
+  CAT_HIT,
+  FORMATION,
+  LATE_MUL_AFTER,
+  LATE_MUL_CAP,
+  type GateDef,
+} from './config'
 import type { GateTone } from './types'
 
 /** 猫への1斉射の合計威力。 */
@@ -55,8 +64,9 @@ export function isRedGate(op: GateDef): boolean {
   return gateTone(op) === 'red'
 }
 
-/** 弾1発で、門の数を1増やす。 */
-export function bumpGate(op: GateDef): GateDef {
+/** 弾1発で、門の数を1増やす。15秒をすぎた × は ×2 で止まる。 */
+export function bumpGate(op: GateDef, time = 0): GateDef {
+  if (time > LATE_MUL_AFTER && op.kind === 'mul' && op.amount >= LATE_MUL_CAP) return op
   return { kind: op.kind, amount: op.amount + 1 }
 }
 

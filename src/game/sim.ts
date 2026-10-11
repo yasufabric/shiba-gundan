@@ -1,7 +1,8 @@
 import {
   BOSS_FACE,
   BOSS_HIT_HALF,
-  BOSS_STOP,
+  BOSS_REACH,
+  BOSS_SPEED,
   BULLET_HIT_DIST,
   BULLET_HIT_LANE,
   BULLET_SPEED,
@@ -296,18 +297,22 @@ function strikeGate(sim: Sim, bullet: Bullet): boolean {
   if (!closest) return false
   bullet.alive = false
   const before = gateTone(closest.op)
-  closest.op = bumpGate(closest.op)
+  const next = bumpGate(closest.op, sim.time)
+  const changed = next.amount !== closest.op.amount || next.kind !== closest.op.kind
+  closest.op = next
   const tone = gateTone(closest.op)
-  closest.pop = 1
   closest.flash = 1
-  sim.events.push({
-    type: 'gate-bump',
-    lane: closest.side < 0 ? -0.52 : 0.52,
-    dist: closest.dist,
-    label: gateLabel(closest.op),
-    tone,
-    flipped: before !== tone,
-  })
+  if (changed) {
+    closest.pop = 1
+    sim.events.push({
+      type: 'gate-bump',
+      lane: closest.side < 0 ? -0.52 : 0.52,
+      dist: closest.dist,
+      label: gateLabel(closest.op),
+      tone,
+      flipped: before !== tone,
+    })
+  }
   sim.events.push({ type: 'hit', lane: bullet.lane, dist: closest.dist, target: 'gate' })
   return true
 }
@@ -411,8 +416,7 @@ export function step(sim: Sim, dt: number, targetLane: number | null, rocket = f
   }
   if (sim.boss && sim.boss.hp > 0) {
     sim.boss.flash = Math.max(0, sim.boss.flash - stepDt * 5)
-    if (sim.boss.dist > BOSS_STOP) sim.boss.dist = Math.max(BOSS_STOP, sim.boss.dist - SCROLL_SPEED * stepDt)
-    if (sim.boss.dist <= BOSS_STOP && sim.boss.stoppedAt === null) sim.boss.stoppedAt = sim.time
+    sim.boss.dist = Math.max(BOSS_REACH, sim.boss.dist - BOSS_SPEED * stepDt)
   }
 
   sim.rocketCd = Math.max(0, sim.rocketCd - stepDt)
@@ -440,6 +444,10 @@ export function step(sim: Sim, dt: number, targetLane: number | null, rocket = f
   resolveGates(sim)
   resolveDrums(sim)
   resolveCats(sim)
+  if (sim.boss && sim.boss.hp > 0 && sim.boss.dist <= BOSS_REACH && sim.phase === 'play') {
+    sim.boss.stoppedAt = sim.time
+    lose(sim)
+  }
 
   sim.gates = sim.gates.filter((gate) => !gate.passed || gate.flash > 0)
   sim.cats = sim.cats.filter((cat) => cat.alive && cat.dist > -80)
