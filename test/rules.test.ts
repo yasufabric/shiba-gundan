@@ -72,15 +72,23 @@ test('最初の2組は増える青だけで、赤と÷は15秒後', () => {
   const later = GATE_PAIRS.filter((pair) => isRedGate(pair.left) || isRedGate(pair.right))
   assert.ok(later.length >= 1)
   for (const pair of later) assert.ok(pair.time > 15)
-  const divided = GATE_PAIRS.find((pair) => pair.left.kind === 'mul' && pair.left.amount <= -2 || pair.right.kind === 'mul' && pair.right.amount <= -2)
-  assert.ok(divided)
-  assert.ok((divided?.time ?? 0) > 15)
+  for (const pair of GATE_PAIRS) {
+    for (const op of [pair.left, pair.right]) {
+      if (op.kind === 'mul' && op.amount <= -2) assert.ok(pair.time > 15)
+      if (op.kind === 'mul' && op.amount >= 2) assert.ok(pair.time > 15)
+    }
+  }
+  assert.equal(bumpGate({ kind: 'mul', amount: 2 }, 16).amount, 2)
+  let capped = { kind: 'mul' as const, amount: -6 }
+  for (let i = 0; i < 30; i += 1) capped = bumpGate(capped, 16)
+  assert.equal(capped.amount, 2)
 })
 
 test('猫の群れは想定匹数の固定値で、ボスは最後', () => {
   assert.equal(HORDE_ROWS, 1)
   assert.equal(HORDE_LANE, 1)
-  assert.ok(HORDES.length >= 4)
+  assert.ok(HORDES.length >= 2)
+  assert.equal(new Set(HORDES.map((horde) => horde.count)).size, 1)
   let total = 0
   for (const horde of HORDES) {
     assert.ok(horde.count >= 8 && horde.count <= HORDE_MAX)

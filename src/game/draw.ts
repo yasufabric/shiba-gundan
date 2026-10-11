@@ -1,4 +1,4 @@
-import { LOOK, SCROLL_SPEED, VIEW_H, VIEW_W } from './config'
+import { BOSS_REACH, LOOK, SCROLL_SPEED, SPAWN_DIST, VIEW_H, VIEW_W } from './config'
 import { beanOffsets, project } from './layout'
 import { countFontSize, gateLabel, gateTone } from './rules'
 import type { SpriteSet } from './sprites'
@@ -391,6 +391,29 @@ function drawCat(ctx: CanvasRenderingContext2D, cat: Cat, time: number): void {
   const fur = FURS[cat.variant] ?? FURS[0]
   if (cat.brute) paintCat(ctx, at.x, at.y + bob, h / 84, fur, false, cat.flash, time + cat.id)
   else paintHordeCat(ctx, at.x, at.y + bob, h / 84, fur, cat.flash)
+}
+
+/** ボスが奥から隊列へ歩いてくる筋。近いほど太く、赤くする。 */
+function drawBossApproach(ctx: CanvasRenderingContext2D, sim: Sim, time: number): void {
+  const boss = sim.boss
+  if (!boss || boss.hp <= 0) return
+  const closeness = 1 - Math.min(1, Math.max(0, (boss.dist - BOSS_REACH) / (SPAWN_DIST - BOSS_REACH)))
+  const at = project(0, Math.max(0, boss.dist))
+  const ahead = project(0, Math.max(0, boss.dist - 140))
+  const pulse = 0.5 + 0.5 * Math.sin(time * 5)
+  ctx.save()
+  ctx.strokeStyle = `rgba(255, 48, 72, ${0.28 + closeness * 0.45})`
+  ctx.lineWidth = 14 + closeness * 36
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(at.x, at.y)
+  ctx.lineTo(ahead.x, ahead.y + 18)
+  ctx.stroke()
+  ctx.fillStyle = `rgba(255, 36, 64, ${0.16 + closeness * 0.34 + pulse * 0.06})`
+  ctx.beginPath()
+  ctx.ellipse(at.x, at.y + 10, 54 + closeness * 120, 16 + closeness * 22, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
 }
 
 function drawBoss(ctx: CanvasRenderingContext2D, sim: Sim, time: number): void {
@@ -887,6 +910,7 @@ export function render(ctx: CanvasRenderingContext2D, state: RenderState): void 
   ctx.translate(ox, oy)
   const plate = ensureBackdrop(ctx.canvas.width, ctx.canvas.height)
   ctx.drawImage(plate, 0, 0, VIEW_W, VIEW_H)
+  drawBossApproach(ctx, state.sim, state.time)
 
   const order: { dist: number; kind: 'gate' | 'drum' | 'cat' | 'bullet'; index: number }[] = []
   state.sim.gates.forEach((gate, index) => order.push({ dist: gate.dist, kind: 'gate', index }))
@@ -903,6 +927,17 @@ export function render(ctx: CanvasRenderingContext2D, state: RenderState): void 
   drawParticles(ctx, state.particles)
   drawFloaters(ctx, state.floaters)
   drawBossBar(ctx, state.sim)
+  const boss = state.sim.boss
+  if (boss && boss.hp > 0 && state.sim.phase === 'play') {
+    const closeness = 1 - Math.min(1, Math.max(0, (boss.dist - BOSS_REACH) / (SPAWN_DIST - BOSS_REACH)))
+    if (closeness > 0.35) {
+      const edge = ctx.createRadialGradient(VIEW_W / 2, VIEW_H * 0.72, 80, VIEW_W / 2, VIEW_H * 0.55, 520)
+      edge.addColorStop(0, 'rgba(255, 40, 60, 0)')
+      edge.addColorStop(1, `rgba(180, 16, 36, ${0.15 + (closeness - 0.35) * 0.7})`)
+      ctx.fillStyle = edge
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H)
+    }
+  }
 
   if (state.flash > 0) {
     ctx.fillStyle = state.flashColor
