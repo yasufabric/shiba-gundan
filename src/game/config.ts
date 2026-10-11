@@ -142,7 +142,7 @@ export const HORDE_ROWS = 1
 export const HORDE_MAX = 240
 
 export const BOSS_SPAWN = 41
-export const BOSS_HP = 61000
+export const BOSS_HP = 59000
 /** 隊列へ歩く速さ。湧いてから届くまでおよそ20秒。 */
 export const BOSS_SPEED = 44
 /** この距離まで来てまだ生きていれば、隊列に届いて負け。 */
