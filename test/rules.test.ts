@@ -9,10 +9,12 @@ import {
   HORDE_LANE,
   HORDE_MAX,
   HORDE_ROWS,
+  MINI_BOSS,
   START_DOGS,
+  TUTORIAL_GATE,
 } from '../src/game/config'
 import { beanOffsets } from '../src/game/layout'
-import { bossMaxHp, buildSchedule, catHpMul } from '../src/game/level'
+import { buildSchedule, stageFeatures } from '../src/game/level'
 import { applyGate, bumpGate, countFontSize, formationHalf, gateLabel, gateTone, isRedGate } from '../src/game/rules'
 
 test('豆柴は1匹から始まり、門は青の＋×と赤の−÷', () => {
@@ -114,16 +116,58 @@ test('×の門の手前にドラム缶がある', () => {
   assert.ok(multiplied?.drum)
 })
 
-test('2ステージ目は猫とボスの数字だけ上がる', () => {
-  assert.equal(catHpMul(1), 1)
-  assert.ok(catHpMul(2) > 1)
-  assert.ok(bossMaxHp(2) > bossMaxHp(1))
-  const first = buildSchedule(1).filter((item) => item.kind === 'cat')
-  const second = buildSchedule(2).filter((item) => item.kind === 'cat')
-  assert.ok(second.length > first.length)
-  const boss1 = buildSchedule(1).find((item) => item.kind === 'boss')
+test('1面の並びは変えず、2面以降は要素を1つずつ足す', () => {
+  const first = buildSchedule(1)
+  const gates = first.filter((item) => item.kind === 'gates')
+  assert.equal(gates.length, GATE_PAIRS.length)
+  assert.ok(gates.every((item) => item.kind === 'gates' && item.slide === 0 && item.time >= GATE_PAIRS[0].time))
+  const bosses = first.filter((item) => item.kind === 'boss')
+  assert.equal(bosses.length, 1)
+  assert.equal(bosses[0]?.kind === 'boss' ? bosses[0].hp : 0, BOSS_HP)
+  assert.equal(stageFeatures(1).pressure, 1)
+  assert.equal(stageFeatures(2).slide, true)
+  assert.equal(stageFeatures(2).shield, false)
+  assert.equal(stageFeatures(2).twin, false)
+  assert.equal(stageFeatures(3).shield, true)
+  assert.equal(stageFeatures(3).slide, false)
+  assert.equal(stageFeatures(4).twin, true)
+  assert.equal(stageFeatures(5).slide && stageFeatures(5).shield && stageFeatures(5).twin, true)
+  assert.ok(stageFeatures(5).pressure > 1)
+
+  const slide = buildSchedule(2).filter((item) => item.kind === 'gates')
+  const tutorial = slide[0]
+  assert.equal(tutorial?.kind, 'gates')
+  if (tutorial?.kind === 'gates') {
+    assert.ok(tutorial.time < 10)
+    assert.equal(tutorial.time, TUTORIAL_GATE.time)
+    assert.ok(tutorial.slide > 0)
+    assert.equal(tutorial.left.amount > 0 && tutorial.right.amount > 0, true)
+  }
+  assert.ok(slide.slice(1).every((item) => item.kind === 'gates' && item.slide > 0))
   const boss2 = buildSchedule(2).find((item) => item.kind === 'boss')
-  assert.equal(boss1?.kind, 'boss')
-  assert.equal(boss2?.kind, 'boss')
-  if (boss1?.kind === 'boss' && boss2?.kind === 'boss') assert.ok(boss2.hp > boss1.hp)
+  assert.equal(boss2?.kind === 'boss' ? boss2.hp : 0, BOSS_HP)
+
+  const shieldCats = buildSchedule(3).filter((item) => item.kind === 'cat')
+  const early = shieldCats.filter((item) => item.kind === 'cat' && item.time < 10)
+  const late = shieldCats.filter((item) => item.kind === 'cat' && item.time > 10)
+  assert.ok(early.length > 0 && early.every((item) => item.kind === 'cat' && item.shield > 0 && item.shield < 20))
+  assert.ok(late.every((item) => item.kind === 'cat' && item.shield > 100))
+
+  const twin = buildSchedule(4).filter((item) => item.kind === 'boss')
+  assert.equal(twin.length, 3)
+  const preview = twin.find((item) => item.kind === 'boss' && item.preview)
+  const real = twin.filter((item) => item.kind === 'boss' && !item.preview)
+  assert.equal(preview?.kind, 'boss')
+  if (preview?.kind === 'boss') {
+    assert.ok(preview.time < 10)
+    assert.equal(preview.hp, MINI_BOSS.hp)
+  }
+  assert.equal(real.length, 2)
+  assert.ok(real.every((item) => item.kind === 'boss' && item.hp < BOSS_HP && item.time === BOSS_SPAWN))
+
+  const laterBoss = buildSchedule(5).find((item) => item.kind === 'boss' && !item.preview)
+  const stage4Boss = real[0]
+  assert.equal(laterBoss?.kind, 'boss')
+  assert.equal(stage4Boss?.kind, 'boss')
+  if (laterBoss?.kind === 'boss' && stage4Boss?.kind === 'boss') assert.ok(laterBoss.hp > stage4Boss.hp)
 })
