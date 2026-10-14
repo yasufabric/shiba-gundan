@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   FIRE_INTERVAL,
+  FORMATION,
+  GATE_BODY,
   HORDES,
+  HORDE_GAPS,
   HORDE_SPAWN,
   LATE_MUL_AFTER,
   LATE_MUL_CAP,
@@ -27,7 +30,7 @@ function projectOp(sim: Sim, gate: Sim['gates'][number]): GateDef {
     hits = Math.max(0, hits - Math.floor(drum.hp / Math.max(0.2, damage)))
   }
   let amount = gate.op.amount + hits
-  if (sim.time > LATE_MUL_AFTER && gate.op.kind === 'mul' && amount > LATE_MUL_CAP) amount = LATE_MUL_CAP
+  if (gate.op.kind === 'mul' && amount > LATE_MUL_CAP && (gate.held || sim.time > LATE_MUL_AFTER)) amount = LATE_MUL_CAP
   return { kind: gate.op.kind, amount }
 }
 
@@ -45,28 +48,53 @@ function soonestPair(sim: Sim) {
   return { pairId: soonest.pairId, left, right }
 }
 
-function lookAhead(sim: Sim, lane: number, pairId: number): number {
+function lookAhead(sim: Sim, side: -1 | 1, pairId: number): number {
   const copy = structuredClone(sim)
   let guard = 0
   while (copy.phase === 'play' && guard < 500) {
+    const gate = copy.gates.find((item) => item.pairId === pairId && item.side === side)
+    const lane = gate && gate.slide > 0 ? Math.max(-1, Math.min(1, side * GATE_BODY + gate.shift)) : side < 0 ? -0.78 : 0.78
     step(copy, DT, lane, false)
-    const pending = copy.gates.some((gate) => gate.pairId === pairId && !gate.passed)
+    const pending = copy.gates.some((item) => item.pairId === pairId && !item.passed)
     if (!pending) return copy.dogs
     guard += 1
   }
   return copy.dogs
 }
 
+function hordeLane(sim: Sim): number | null {
+  const living = sim.cats.filter((cat) => cat.alive && cat.dist > 26 && cat.dist < 360)
+  if (living.length < 12) return null
+  const nearest = Math.min(...living.map((cat) => cat.dist))
+  const wave = living.filter((cat) => Math.abs(cat.dist - nearest) < 50)
+  const reach = Math.min(FORMATION.halfMax, FORMATION.halfBase + FORMATION.halfPerDog * sim.dogs) + FORMATION.catBody
+  let bestLane = 0
+  let bestHits = Infinity
+  const lanes = [0, ...HORDE_GAPS.map((gap) => gap.lane)]
+  for (const lane of lanes) {
+    const hits = wave.filter((cat) => Math.abs(cat.lane - lane) <= reach).length
+    if (hits < bestHits) {
+      bestHits = hits
+      bestLane = lane
+    }
+  }
+  return bestLane
+}
+
 function steer(sim: Sim, policy: 'idle' | 'smart' | 'half' | 'best', locks: Map<number, number>, flips: { n: number }): number {
   if (policy === 'idle') return 0
   const pair = soonestPair(sim)
+  if (policy === 'smart' || policy === 'best') {
+    const gap = hordeLane(sim)
+    if (gap !== null && (!pair || pair.left.dist > 260)) return gap
+  }
   if (!pair) return sim.lane
   const locked = locks.get(pair.pairId)
-  if (locked !== undefined) return locked
+  if (locked !== undefined) return laneFor(locked < 0 ? pair.left : pair.right, locked as -1 | 1)
   let side: -1 | 1
   if (policy === 'best') {
-    const leftDogs = lookAhead(sim, -0.78, pair.pairId)
-    const rightDogs = lookAhead(sim, 0.78, pair.pairId)
+    const leftDogs = lookAhead(sim, -1, pair.pairId)
+    const rightDogs = lookAhead(sim, 1, pair.pairId)
     side = leftDogs >= rightDogs ? -1 : 1
   } else {
     const leftDogs = applyGate(sim.dogs, projectOp(sim, pair.left)).dogs
@@ -76,9 +104,13 @@ function steer(sim: Sim, policy: 'idle' | 'smart' | 'half' | 'best', locks: Map<
     if (policy === 'half') flips.n += 1
     side = takeBest ? best : best === -1 ? 1 : -1
   }
-  const lane = side < 0 ? -0.78 : 0.78
-  locks.set(pair.pairId, lane)
-  return lane
+  locks.set(pair.pairId, side)
+  return laneFor(side < 0 ? pair.left : pair.right, side)
+}
+
+function laneFor(gate: Sim['gates'][number], side: -1 | 1): number {
+  if (gate.slide > 0) return Math.max(-1, Math.min(1, side * GATE_BODY + gate.shift))
+  return side < 0 ? -0.78 : 0.78
 }
 
 function fightSeconds(sim: Sim): number {
@@ -86,16 +118,16 @@ function fightSeconds(sim: Sim): number {
   return sim.clearedAt - sim.boss.spawnedAt
 }
 
-function run(policy: 'idle' | 'smart' | 'half' | 'best', maxTime = 80) {
-  const sim = createSim(1)
+function run(policy: 'idle' | 'smart' | 'half' | 'best', maxTime = 80, stage = 1) {
+  const sim = createSim(stage)
   const events: Array<SimEvent & { time: number }> = []
   const locks = new Map<number, number>()
   const flips = { n: 0 }
   let beforeBoss = -1
   while (sim.time < maxTime && sim.phase === 'play') {
-    const bossUp = Boolean(sim.boss && sim.boss.hp > 0)
+    const bossUp = sim.bosses.some((boss) => !boss.preview && boss.hp > 0)
     const frame = step(sim, DT, steer(sim, policy, locks, flips), policy !== 'idle' && bossUp && sim.rocketCd <= 0)
-    if (sim.boss && beforeBoss < 0) beforeBoss = sim.dogs
+    if (sim.bosses.some((boss) => !boss.preview) && beforeBoss < 0) beforeBoss = sim.dogs
     for (const event of frame) events.push({ ...event, time: sim.time })
   }
   return { sim, events, beforeBoss }
@@ -163,7 +195,7 @@ test('赤い門は想定匹数だと約2.5秒で青に変わる', () => {
   assert.ok(seconds >= 2.2 && seconds <= 2.8, String(seconds))
 })
 
-test('うまく選ぶとボス前は約300匹で、群れでは1〜2割減って約12秒で倒す', () => {
+test('うまく選ぶとボス前は約380匹で、群れでは1〜2割減り、残り約9秒で倒す', () => {
   const { sim, events, beforeBoss } = run('smart')
   const losses = hordeReport(events)
   const jumped = events.find((event) => event.type === 'gate' && event.label === '×2')
@@ -174,15 +206,16 @@ test('うまく選ぶとボス前は約300匹で、群れでは1〜2割減って
   assert.equal(sim.phase, 'clear')
   assert.equal(jumped?.type, 'gate')
   if (jumped?.type === 'gate') assert.equal(jumped.label, '×2')
-  assert.ok(beforeBoss >= 260 && beforeBoss <= 340, String(beforeBoss))
-  assert.ok(fight >= 10.5 && fight <= 13.5, String(fight))
+  assert.ok(beforeBoss >= 360 && beforeBoss <= 420, String(beforeBoss))
+  assert.ok(sim.clearMargin !== null && sim.clearMargin >= 7 && sim.clearMargin <= 12, String(sim.clearMargin))
+  assert.ok(fight >= 8 && fight <= 13, String(fight))
   assert.equal(losses.length, HORDES.length)
   for (const row of losses) {
     assert.ok(row.ratio >= 0.1 && row.ratio <= 0.2, `${row.loss}/${row.before}`)
   }
 })
 
-test('門を半分外すと群れで3割以上減り、約150匹でぎりぎりボスに間に合う', () => {
+test('門を半分外すと厚い列で3割以上減り、1面はぎりぎり勝つ', () => {
   const good = run('smart')
   const half = run('half')
   const losses = hordeReport(half.events)
@@ -192,11 +225,11 @@ test('門を半分外すと群れで3割以上減り、約150匹でぎりぎり�
   )
   assert.equal(half.sim.phase, 'clear')
   assert.ok(half.beforeBoss < good.beforeBoss)
-  assert.ok(half.beforeBoss >= 140 && half.beforeBoss <= 180, String(half.beforeBoss))
-  assert.ok(fight >= 17.5 && fight <= 20.2, String(fight))
-  for (const row of losses) {
-    assert.ok(row.ratio >= 0.3 && row.ratio <= 0.4, `${row.loss}/${row.before}`)
-  }
+  assert.ok(half.beforeBoss >= 140 && half.beforeBoss <= 200, String(half.beforeBoss))
+  assert.ok(half.sim.clearMargin !== null && half.sim.clearMargin > 0 && half.sim.clearMargin < 6, String(half.sim.clearMargin))
+  assert.ok(fight >= 14 && fight <= 20.2, String(fight))
+  const thick = Math.max(...losses.map((row) => row.ratio))
+  assert.ok(thick >= 0.3, losses.map((row) => `${row.loss}/${row.before}`).join(','))
 })
 
 test('最強でもボス前は400匹を超えない', () => {
@@ -340,4 +373,134 @@ test('ボス戦のロケットはボスだけに届く', () => {
   }
   assert.ok(sim.boss)
   assert.ok(before - sim.boss.hp >= ROCKET_DAMAGE - 1, `${before} -> ${sim.boss.hp}`)
+})
+
+test('揺れる門から外れると増減せず、門の上にいると入る', () => {
+  const missed = createSim(1)
+  missed.schedule = []
+  missed.dogs = 10
+  missed.lane = -1
+  const slide = 0.9
+  const phase = Math.PI / 2
+  missed.gates.push(
+    {
+      id: 2,
+      pairId: 1,
+      side: -1,
+      dist: 1,
+      op: { kind: 'add', amount: 20 },
+      passed: false,
+      flash: 0,
+      pop: 0,
+      sealed: false,
+      slide,
+      phase,
+      shift: 0,
+      held: false,
+    },
+    {
+      id: 3,
+      pairId: 1,
+      side: 1,
+      dist: 1,
+      op: { kind: 'add', amount: 4 },
+      passed: false,
+      flash: 0,
+      pop: 0,
+      sealed: false,
+      slide,
+      phase,
+      shift: 0,
+      held: false,
+    },
+  )
+  step(missed, DT, -1)
+  assert.equal(missed.dogs, 10)
+
+  const stood = createSim(1)
+  stood.schedule = []
+  stood.dogs = 10
+  stood.gates.push(
+    {
+      id: 2,
+      pairId: 1,
+      side: -1,
+      dist: 1,
+      op: { kind: 'add', amount: 20 },
+      passed: false,
+      flash: 0,
+      pop: 0,
+      sealed: false,
+      slide,
+      phase,
+      shift: 0,
+      held: false,
+    },
+    {
+      id: 3,
+      pairId: 1,
+      side: 1,
+      dist: 1,
+      op: { kind: 'add', amount: 4 },
+      passed: false,
+      flash: 0,
+      pop: 0,
+      sealed: false,
+      slide,
+      phase,
+      shift: 0,
+      held: false,
+    },
+  )
+  step(stood, DT, -0.52 + slide)
+  assert.equal(stood.dogs, 30)
+})
+
+test('盾の猫は本体に弾を通さず、触れると3匹減る', () => {
+  const sim = createSim(1)
+  sim.schedule = []
+  sim.dogs = 20
+  sim.lane = 0
+  sim.fireCd = 0
+  sim.cats.push({
+    id: 1,
+    lane: 0,
+    dist: 80,
+    hp: 40,
+    maxHp: 40,
+    shield: 80,
+    maxShield: 80,
+    brute: false,
+    variant: 0,
+    flash: 0,
+    alive: true,
+  })
+  let guard = 0
+  while (sim.cats[0] && sim.cats[0].shield === 80 && guard < 30) {
+    step(sim, DT, 0)
+    guard += 1
+  }
+  const cat = sim.cats[0]
+  assert.ok(cat)
+  assert.equal(cat?.hp, 40)
+  assert.ok((cat?.shield ?? 80) < 80)
+  if (cat) cat.dist = 10
+  sim.dogs = 20
+  step(sim, DT, 0)
+  assert.equal(sim.dogs, 17)
+})
+
+test('上手いルートの残り時間は面が進むほど短く、門を半分外すと3面から負ける', () => {
+  const goals = [9, 6, 4, 2.5]
+  for (let stage = 1; stage <= 4; stage += 1) {
+    const skilled = run('smart', 100, stage)
+    const margin = skilled.sim.clearMargin
+    console.log(`ladder smart s${stage} ${skilled.sim.phase} dogs=${skilled.beforeBoss} margin=${margin?.toFixed(2) ?? '-'}`)
+    assert.equal(skilled.sim.phase, 'clear')
+    assert.ok(margin !== null && Math.abs(margin - (goals[stage - 1] ?? 0)) < 2, String(margin))
+    if (stage === 4) assert.ok(margin >= 2 && margin <= 3, String(margin))
+    const half = run('half', 100, stage)
+    console.log(`ladder half s${stage} ${half.sim.phase} dogs=${half.beforeBoss} margin=${half.sim.clearMargin?.toFixed(2) ?? '-'}`)
+    assert.equal(half.sim.phase, stage <= 2 ? 'clear' : 'lose')
+  }
 })

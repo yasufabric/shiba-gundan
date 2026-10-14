@@ -16,9 +16,12 @@ import {
   FIRE_INTERVAL,
   FORMATION,
   DRUM_RANGE,
+  GATE_BODY,
+  GATE_BODY_HALF,
   GATE_GAP,
   GATE_HIT_DIST,
   GATE_RANGE,
+  SHIELD_LOSS,
   HORDE_SPAWN,
   LANE_SPEED,
   MAX_BULLETS,
@@ -52,6 +55,9 @@ export function createSim(stage = 1): Sim {
     boss: null,
     bosses: [],
     clearedAt: null,
+    clearMargin: null,
+    bulletBossDamage: 0,
+    rocketBossDamage: 0,
     catLeaks: 0,
     nextId: 1,
     cursor: 0,
@@ -89,6 +95,7 @@ function spawnOne(sim: Sim, item: Spawn): void {
           slide: item.slide,
           phase: item.time,
           shift: 0,
+          held: item.holdMul && side.op.kind === 'mul',
         }
         sim.gates.push(gate)
       }
@@ -185,7 +192,12 @@ function launchRocket(sim: Sim): void {
   sim.events.push({ type: 'rocket' })
 }
 
+function gateBodyCenter(gate: Gate): number {
+  return gate.side * GATE_BODY + gate.shift
+}
+
 function gateCovers(gate: Gate, lane: number): boolean {
+  if (gate.slide > 0) return Math.abs(lane - gateBodyCenter(gate)) <= GATE_BODY_HALF
   const center = gate.shift
   if (gate.side < 0) return lane <= center - GATE_GAP
   return lane >= center + GATE_GAP
@@ -210,6 +222,7 @@ function maybeClear(sim: Sim): void {
   if (real.every((boss) => boss.hp <= 0)) {
     sim.phase = 'clear'
     sim.clearedAt = sim.time
+    sim.clearMargin = Math.min(...real.map((boss) => Math.max(0, (boss.dist - BOSS_REACH) / BOSS_SPEED)))
     sim.events.push({ type: 'boss-down' })
   }
 }
@@ -225,9 +238,16 @@ function resolveGates(sim: Sim): void {
     if (!gate.passed && gate.dist <= 0) ready.add(gate.pairId)
   }
   for (const pairId of ready) {
-    const center = sim.gates.find((gate) => gate.pairId === pairId)?.shift ?? 0
-    const side: -1 | 1 = sim.lane < center ? -1 : 1
-    const chosen = sim.gates.find((gate) => gate.pairId === pairId && gate.side === side)
+    const pair = sim.gates.filter((gate) => gate.pairId === pairId)
+    const sliding = pair.some((gate) => gate.slide > 0)
+    let chosen: Gate | undefined
+    if (sliding) {
+      chosen = pair.find((gate) => gateCovers(gate, sim.lane))
+    } else {
+      const center = pair[0]?.shift ?? 0
+      const side: -1 | 1 = sim.lane < center ? -1 : 1
+      chosen = pair.find((gate) => gate.side === side)
+    }
     for (const gate of sim.gates) {
       if (gate.pairId !== pairId) continue
       gate.passed = true
@@ -284,9 +304,10 @@ function resolveCats(sim: Sim): void {
     if (!hit) continue
     cat.alive = false
     if (sim.phase !== 'play') continue
-    sim.dogs = Math.max(0, sim.dogs - 1)
+    const loss = cat.maxShield > 0 ? SHIELD_LOSS : 1
+    sim.dogs = Math.max(0, sim.dogs - loss)
     sim.catLeaks += 1
-    sim.events.push({ type: 'hurt', lane: cat.lane, dist: cat.dist, loss: 1 })
+    sim.events.push({ type: 'hurt', lane: cat.lane, dist: cat.dist, loss })
     if (sim.dogs <= 0) lose(sim)
   }
 }
@@ -308,7 +329,7 @@ function strikeDrum(sim: Sim, bullet: Bullet): boolean {
   bullet.alive = false
   closest.hp -= bullet.damage
   closest.flash = 1
-  sim.events.push({ type: 'hit', lane: closest.lane, dist: closest.dist, target: 'drum' })
+  sim.events.push({ type: 'hit', lane: closest.lane, dist: closest.dist, target: 'drum', heavy: false })
   if (closest.hp <= 0) {
     closest.alive = false
     sim.events.push({ type: 'drum', lane: closest.lane, dist: closest.dist })
@@ -332,7 +353,7 @@ function strikeGate(sim: Sim, bullet: Bullet): boolean {
   if (!closest) return false
   bullet.alive = false
   const before = gateTone(closest.op)
-  const next = bumpGate(closest.op, sim.time)
+  const next = closest.held ? closest.op : bumpGate(closest.op, sim.time)
   const changed = next.amount !== closest.op.amount || next.kind !== closest.op.kind
   closest.op = next
   const tone = gateTone(closest.op)
@@ -348,7 +369,7 @@ function strikeGate(sim: Sim, bullet: Bullet): boolean {
       flipped: before !== tone,
     })
   }
-  sim.events.push({ type: 'hit', lane: bullet.lane, dist: closest.dist, target: 'gate' })
+  sim.events.push({ type: 'hit', lane: bullet.lane, dist: closest.dist, target: 'gate', heavy: false })
   return true
 }
 
@@ -367,10 +388,12 @@ function strikeCat(sim: Sim, bullet: Bullet): boolean {
   }
   if (!closest) return false
   bullet.alive = false
-  if (closest.shield > 0) closest.shield = Math.max(0, closest.shield - bullet.damage)
-  else closest.hp -= bullet.damage
+  if (closest.shield > 0) {
+    // 正面の弾は盾が受け、本体には通さない。
+    closest.shield = Math.max(0, closest.shield - bullet.damage)
+  } else closest.hp -= bullet.damage
   closest.flash = 1
-  sim.events.push({ type: 'hit', lane: closest.lane, dist: closest.dist, target: 'cat' })
+  sim.events.push({ type: 'hit', lane: closest.lane, dist: closest.dist, target: 'cat', heavy: false })
   if (closest.hp <= 0) {
     closest.alive = false
     sim.events.push({
@@ -399,9 +422,12 @@ function strikeBoss(sim: Sim, bullet: Bullet): boolean {
   }
   if (!boss) return false
   bullet.alive = false
-  boss.hp -= bullet.bossDamage
+  const dealt = Math.min(boss.hp, bullet.bossDamage)
+  boss.hp -= dealt
+  if (bullet.kind === 'rocket') sim.rocketBossDamage += dealt
+  else sim.bulletBossDamage += dealt
   boss.flash = 1
-  sim.events.push({ type: 'hit', lane: bullet.lane, dist: boss.dist, target: 'boss' })
+  sim.events.push({ type: 'hit', lane: bullet.lane, dist: boss.dist, target: 'boss', heavy: bullet.kind === 'rocket' })
   if (boss.hp <= 0) {
     boss.hp = 0
     if (!boss.preview) maybeClear(sim)

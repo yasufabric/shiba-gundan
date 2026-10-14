@@ -1,4 +1,4 @@
-import { FORMATION, LOOK, SPAWN_DIST, VIEW_W } from './config'
+import { FORMATION, LOOK, SPAWN_DIST, VIEW_H, VIEW_W } from './config'
 import { formationHalf } from './rules'
 
 export interface Projected {
@@ -24,6 +24,32 @@ export function project(lane: number, dist: number): Projected {
     y,
     scale,
   }
+}
+
+export interface LabelRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/**
+ * 頭上の匹数。数字1字をフォント幅で見て、左右とも画面の中に収める。
+ * anchorTop は隊長の絵の上端。
+ */
+export function troopLabelRect(anchorX: number, anchorTop: number, digits: number, fontSize: number): LabelRect {
+  const margin = FORMATION.labelMargin
+  const textW = Math.max(1, digits) * fontSize
+  const w = Math.max(fontSize, textW + fontSize * 0.35)
+  const h = fontSize * 1.15
+  const maxX = Math.max(margin, VIEW_W - margin - w)
+  let x = Math.max(margin, Math.min(maxX, anchorX - w / 2))
+  let y = anchorTop - FORMATION.labelGap - h
+  y = Math.max(margin, Math.min(VIEW_H - margin - h, y))
+  const rocket = { x: VIEW_W - 90, y: VIEW_H - 104, w: 76, h: 76 }
+  const overlaps = x < rocket.x + rocket.w && x + w > rocket.x && y < rocket.y + rocket.h && y + h > rocket.y
+  if (overlaps) x = Math.max(margin, Math.min(maxX, rocket.x - margin - w))
+  return { x, y, w, h }
 }
 
 /** 横幅は道の3分の1で止める。あふれた豆柴は後ろへ列を足す。80匹を超えた分は間隔を詰める。 */

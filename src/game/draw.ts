@@ -1,5 +1,5 @@
-import { BOSS_REACH, LOOK, SCROLL_SPEED, SPAWN_DIST, VIEW_H, VIEW_W } from './config'
-import { beanOffsets, project } from './layout'
+import { BOSS_REACH, GATE_BODY, LOOK, SCROLL_SPEED, SPAWN_DIST, VIEW_H, VIEW_W } from './config'
+import { beanOffsets, project, troopLabelRect } from './layout'
 import { countFontSize, gateLabel, gateTone } from './rules'
 import type { SpriteSet } from './sprites'
 import type { Bullet, Cat, Drum, Gate, Sim } from './types'
@@ -257,7 +257,7 @@ function drawRoad(ctx: CanvasRenderingContext2D, time: number): void {
 function drawGate(ctx: CanvasRenderingContext2D, gate: Gate): void {
   const dist = Math.max(0, gate.dist)
   const shift = gate.shift
-  const sideLane = (gate.side < 0 ? -0.52 : 0.52) + shift
+  const sideLane = gate.side * GATE_BODY + shift
   const at = project(sideLane, dist)
   const edge = project((gate.side < 0 ? -1 : 1) + shift, dist)
   const mid = project(0, dist)
@@ -741,19 +741,15 @@ function drawArmy(ctx: CanvasRenderingContext2D, state: RenderState): void {
   ctx.font = `${fontSize}px ${FONT}`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  const tw = ctx.measureText(label).width
-  const bw = Math.max(fontSize, tw + fontSize * 0.55)
-  const bh = fontSize * 1.15
-  const bx = captain.x - bw / 2
-  const by = captain.y - h - bh * 0.35 - jump
-  roundRect(ctx, bx, by, bw, bh, 10)
+  const box = troopLabelRect(captain.x, captain.y - h - jump, label.length, fontSize)
+  roundRect(ctx, box.x, box.y, box.w, box.h, 10)
   ctx.fillStyle = '#fff6df'
   ctx.fill()
   ctx.lineWidth = 3
   ctx.strokeStyle = INK
   ctx.stroke()
   ctx.fillStyle = INK
-  ctx.fillText(label, captain.x, by + bh / 2 + 1)
+  ctx.fillText(label, box.x + box.w / 2, box.y + box.h / 2 + 1)
 }
 
 function drawFloaters(ctx: CanvasRenderingContext2D, floaters: Floater[]): void {
@@ -894,6 +890,15 @@ function drawResult(ctx: CanvasRenderingContext2D, state: RenderState): void {
   }
   ctx.fillStyle = grad
   ctx.fillText(word, 0, 0)
+  if (sim.phase === 'clear' && sim.clearMargin !== null) {
+    const score = String(Math.max(0, Math.round(sim.clearMargin)))
+    ctx.font = `48px ${FONT}`
+    ctx.lineWidth = 8
+    ctx.strokeStyle = INK
+    ctx.strokeText(score, 0, 86)
+    ctx.fillStyle = '#d6ff3a'
+    ctx.fillText(score, 0, 86)
+  }
   ctx.restore()
 }
 

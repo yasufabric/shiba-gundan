@@ -4,7 +4,9 @@ import {
   BOSS_HP,
   BOSS_SPAWN,
   FORMATION,
+  GATE_BODY,
   GATE_PAIRS,
+  SHIELD_LOSS,
   HORDES,
   HORDE_LANE,
   HORDE_MAX,
@@ -14,8 +16,9 @@ import {
   SPAWN_DIST,
   START_DOGS,
   TUTORIAL_GATE,
+  bossHpMultiplier,
 } from '../src/game/config'
-import { beanOffsets } from '../src/game/layout'
+import { beanOffsets, project, troopLabelRect } from '../src/game/layout'
 import { buildSchedule, stageFeatures } from '../src/game/level'
 import { applyGate, bumpGate, countFontSize, formationHalf, gateLabel, gateTone, isRedGate } from '../src/game/rules'
 
@@ -63,23 +66,36 @@ test('隊列の横幅は道の3分の1で止まり、描く豆柴は80匹まで'
   assert.ok(countFontSize(300) <= FORMATION.countMax)
 })
 
-test('最初の2組は増える青だけで、赤と÷は15秒後', () => {
+test('最初の加算は増える青だけで、15秒以内に×2を一度見せ、赤と÷は15秒後', () => {
   assert.ok(GATE_PAIRS.length >= 4)
-  const opening = GATE_PAIRS.slice(0, 2)
+  const opening = GATE_PAIRS.filter((pair) => pair.time <= 15 && !pair.holdMul)
+  assert.ok(opening.length >= 2)
   for (const pair of opening) {
-    assert.ok(pair.time <= 15)
     for (const op of [pair.left, pair.right]) {
       assert.equal(isRedGate(op), false)
+      assert.equal(op.kind, 'add')
       assert.ok(applyGate(START_DOGS, op).dogs > START_DOGS)
     }
   }
+  const earlyMul = GATE_PAIRS.filter((pair) => pair.holdMul)
+  assert.equal(earlyMul.length, 1)
+  const shown = earlyMul[0]
+  assert.ok(shown)
+  assert.ok(shown.time <= 15)
+  const mulSide = [shown.left, shown.right].find((op) => op.kind === 'mul')
+  const addSide = [shown.left, shown.right].find((op) => op.kind === 'add')
+  assert.equal(mulSide?.kind, 'mul')
+  assert.equal(mulSide?.amount, 2)
+  assert.equal(isRedGate(mulSide ?? shown.left), false)
+  assert.equal(addSide?.kind, 'add')
+  assert.ok((addSide?.amount ?? 0) > 0)
   const later = GATE_PAIRS.filter((pair) => isRedGate(pair.left) || isRedGate(pair.right))
   assert.ok(later.length >= 1)
   for (const pair of later) assert.ok(pair.time > 15)
   for (const pair of GATE_PAIRS) {
     for (const op of [pair.left, pair.right]) {
       if (op.kind === 'mul' && op.amount <= -2) assert.ok(pair.time > 15)
-      if (op.kind === 'mul' && op.amount >= 2) assert.ok(pair.time > 15)
+      if (op.kind === 'mul' && op.amount >= 2 && !pair.holdMul) assert.ok(pair.time > 15)
     }
   }
   assert.equal(bumpGate({ kind: 'mul', amount: 2 }, 16).amount, 2)
@@ -114,7 +130,7 @@ test('猫の群れは想定匹数の固定値で、ボスは最後', () => {
 test('×の門の手前にドラム缶がある', () => {
   const drums = GATE_PAIRS.filter((pair) => pair.drum)
   assert.ok(drums.length >= 1)
-  const multiplied = GATE_PAIRS.find((pair) => pair.left.kind === 'mul' && pair.left.amount >= 2 || pair.right.kind === 'mul' && pair.right.amount >= 2)
+  const multiplied = GATE_PAIRS.find((pair) => !pair.holdMul && (pair.left.kind === 'mul' && pair.left.amount >= 2 || pair.right.kind === 'mul' && pair.right.amount >= 2))
   assert.ok(multiplied?.drum)
 })
 
@@ -149,7 +165,7 @@ test('1面の並びは変えず、2面以降は要素を1つずつ足す', () =>
   }
   assert.ok(slide.every((item) => item.kind === 'gates' && item.slide > 0))
   const boss2 = buildSchedule(2).find((item) => item.kind === 'boss')
-  assert.equal(boss2?.kind === 'boss' ? boss2.hp : 0, BOSS_HP)
+  assert.equal(boss2?.kind === 'boss' ? boss2.hp : 0, BOSS_HP * bossHpMultiplier(2))
 
   const shieldCats = buildSchedule(3).filter((item) => item.kind === 'cat')
   const early = shieldCats.filter((item) => item.kind === 'cat' && item.time < 10)
@@ -167,11 +183,35 @@ test('1面の並びは変えず、2面以降は要素を1つずつ足す', () =>
     assert.equal(preview.hp, MINI_BOSS.hp)
   }
   assert.equal(real.length, 2)
-  assert.ok(real.every((item) => item.kind === 'boss' && item.hp < BOSS_HP && item.time === BOSS_SPAWN))
+  assert.ok(real.every((item) => item.kind === 'boss' && item.hp === BOSS_HP * bossHpMultiplier(4) && item.time === BOSS_SPAWN))
 
   const laterBoss = buildSchedule(5).find((item) => item.kind === 'boss' && !item.preview)
   const stage4Boss = real[0]
   assert.equal(laterBoss?.kind, 'boss')
   assert.equal(stage4Boss?.kind, 'boss')
   if (laterBoss?.kind === 'boss' && stage4Boss?.kind === 'boss') assert.ok(laterBoss.hp > stage4Boss.hp)
+})
+
+test('ボス体力は面ごとに上がり、匹数では変えない', () => {
+  assert.equal(bossHpMultiplier(1), 1)
+  assert.equal(bossHpMultiplier(2), 1.25)
+  assert.ok(Math.abs(bossHpMultiplier(3) - 1.04) < 1e-9)
+  assert.ok(Math.abs(bossHpMultiplier(4) - 1.06) < 1e-9)
+  assert.ok(Math.abs(bossHpMultiplier(5) - 1.21) < 1e-9)
+  assert.ok(Math.abs(bossHpMultiplier(6) - 1.36) < 1e-9)
+  const stage4 = buildSchedule(4).filter((item) => item.kind === 'boss' && !item.preview)
+  assert.equal(stage4.length, 2)
+  const total = stage4.reduce((sum, item) => sum + (item.kind === 'boss' ? item.hp : 0), 0)
+  assert.ok(Math.abs(total - BOSS_HP * 2.12) < 1)
+})
+
+test('左端の隊列でも匹数の3桁は画面内に収まる', () => {
+  const captain = project(-1, 0)
+  const fontSize = 84
+  const box = troopLabelRect(captain.x, captain.y, 3, fontSize)
+  assert.ok(box.x >= FORMATION.labelMargin, String(box.x))
+  assert.ok(box.x + box.w <= 390 - FORMATION.labelMargin, `${box.x}+${box.w}`)
+  assert.ok(box.w >= fontSize * 3, String(box.w))
+  assert.ok(GATE_BODY > 0)
+  assert.equal(SHIELD_LOSS, 3)
 })

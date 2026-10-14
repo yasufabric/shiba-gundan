@@ -5,16 +5,17 @@ import {
   GATE_SLIDE,
   HORDES,
   HORDE_DEPTH,
+  HORDE_GAPS,
   HORDE_LANE,
   HORDE_MAX,
   HORDE_ROWS,
   MINI_BOSS,
   SHIELD_HP,
-  STAGE_PRESSURE,
+  STAGE_HP_STEP,
   TUTORIAL_GATE,
   TUTORIAL_SHIELD,
   TWIN_BOSS_GAP,
-  TWIN_BOSS_HP_SCALE,
+  bossHpMultiplier,
   type DrumDef,
   type GateDef,
   type HordeDef,
@@ -29,6 +30,8 @@ export interface GateSpawn {
   slide: number
   /** 省略すると通常の湧き距離。 */
   dist?: number
+  /** × 側は弾が当たっても数字が増えない。 */
+  holdMul: boolean
 }
 
 export interface CatSpawn {
@@ -68,25 +71,60 @@ export function stageFeatures(stage: number): StageFeatures {
     slide: safe === 2 || safe >= 5,
     shield: safe === 3 || safe >= 5,
     twin: safe === 4 || safe >= 5,
-    pressure: safe >= 5 ? 1 + (safe - 4) * STAGE_PRESSURE : 1,
+    pressure: safe >= 5 ? 1 + (safe - 4) * STAGE_HP_STEP : 1,
   }
+}
+
+function spansOutside(gapLane: number, gapHalf: number): Array<[number, number]> {
+  const gapL = Math.max(-HORDE_LANE, gapLane - gapHalf)
+  const gapR = Math.min(HORDE_LANE, gapLane + gapHalf)
+  const spans: Array<[number, number]> = []
+  if (gapL > -HORDE_LANE) spans.push([-HORDE_LANE, gapL])
+  if (gapR < HORDE_LANE) spans.push([gapR, HORDE_LANE])
+  if (spans.length === 0) spans.push([-HORDE_LANE, HORDE_LANE])
+  return spans
+}
+
+function lanesAlong(spans: Array<[number, number]>, count: number): number[] {
+  if (count <= 0) return []
+  const total = spans.reduce((sum, [a, b]) => sum + (b - a), 0)
+  const lanes: number[] = []
+  for (let i = 0; i < count; i += 1) {
+    const u = count === 1 ? 0.5 : i / (count - 1)
+    let remain = u * total
+    let lane = spans[0]?.[0] ?? 0
+    for (let s = 0; s < spans.length; s += 1) {
+      const [a, b] = spans[s] ?? [0, 0]
+      const len = b - a
+      if (remain <= len || s === spans.length - 1) {
+        lane = a + Math.max(0, Math.min(len, remain))
+        break
+      }
+      remain -= len
+    }
+    lanes.push(lane)
+  }
+  return lanes
 }
 
 function pushHorde(out: Spawn[], horde: HordeDef, index: number, shield: number, pressure: number): void {
   const count = Math.max(1, Math.min(HORDE_MAX, horde.count))
   const hp = horde.hp * pressure
+  const gap = HORDE_GAPS[index % HORDE_GAPS.length] ?? { lane: 0, half: 0, thin: 1 }
+  const thinCount = Math.min(count - 1, Math.max(0, Math.round(count * gap.thin)))
+  const thickCount = count - thinCount
+  const thick = lanesAlong(spansOutside(gap.lane, gap.half), thickCount)
+  const gapL = Math.max(-HORDE_LANE, gap.lane - gap.half)
+  const gapR = Math.min(HORDE_LANE, gap.lane + gap.half)
+  const thin = lanesAlong([[gapL, gapR]], thinCount)
+  const lanes = thick.concat(thin)
   const rows = Math.min(HORDE_ROWS, count)
-  const cols = Math.ceil(count / rows)
-  for (let i = 0; i < count; i += 1) {
-    const row = Math.min(rows - 1, Math.floor(i / cols))
-    const col = i - row * cols
-    const inRow = Math.min(cols, count - row * cols)
-    const u = inRow <= 1 ? 0.5 : row % 2 === 0 ? col / (inRow - 1) : (col + 0.5) / inRow
-    const lane = -HORDE_LANE + u * HORDE_LANE * 2
+  for (let i = 0; i < lanes.length; i += 1) {
+    const row = rows <= 1 ? 0 : i % rows
     out.push({
       kind: 'cat',
       time: horde.time,
-      lane,
+      lane: lanes[i] ?? 0,
       hp,
       shield,
       brute: false,
@@ -126,6 +164,7 @@ export function buildSchedule(stage: number): Spawn[] {
       drum: null,
       slide: GATE_SLIDE,
       dist: TUTORIAL_GATE.dist,
+      holdMul: false,
     })
   }
   for (const pair of GATE_PAIRS) {
@@ -136,6 +175,8 @@ export function buildSchedule(stage: number): Spawn[] {
       right: { kind: pair.right.kind, amount: pair.right.amount },
       drum: pair.drum ? { side: pair.drum.side, hp: pair.drum.hp } : null,
       slide: features.slide ? GATE_SLIDE : 0,
+      holdMul: pair.holdMul === true,
+      dist: pair.dist,
     })
   }
   if (features.shield) pushTutorialCats(spawns)
@@ -153,7 +194,7 @@ export function buildSchedule(stage: number): Spawn[] {
       behind: 0,
     })
   }
-  const bossHp = BOSS_HP * (features.twin ? TWIN_BOSS_HP_SCALE : 1) * features.pressure
+  const bossHp = BOSS_HP * bossHpMultiplier(safeStage)
   spawns.push({
     kind: 'boss',
     time: BOSS_SPAWN,

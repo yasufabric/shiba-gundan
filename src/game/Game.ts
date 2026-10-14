@@ -231,6 +231,27 @@ export class Game {
         this.sfx.shoot()
         return
       case 'hit':
+        if (event.heavy) {
+          this.shake = 18
+          this.flash = 0.72
+          this.flashColor = 'rgba(255, 160, 32, 0.95)'
+          this.sfx.rocket()
+          this.burstAt(event.lane, event.dist, ['#fff6df', '#ffd15a', '#ff5a1f', '#ff4ad8'], 42)
+          const at = worldPoint(event.lane, event.dist)
+          this.particles.push({
+            x: at.x,
+            y: at.y,
+            vx: 0,
+            vy: 0,
+            life: 0.45,
+            max: 0.45,
+            size: 28,
+            color: '#fff6df',
+            kind: 'ring',
+            rot: 0,
+          })
+          return
+        }
         if (event.target !== 'gate') this.sfx.hit()
         if (event.target === 'boss') this.shake = Math.max(this.shake, 2.2)
         if (event.target !== 'gate') this.puff(event.lane, event.dist, event.target === 'boss' ? '#ffd15a' : '#fff6df', 3)
