@@ -1,5 +1,5 @@
 import { FORMATION, LOOK, SPAWN_DIST, VIEW_H, VIEW_W } from './config'
-import { formationHalf } from './rules'
+import { countFontSize, formationHalf } from './rules'
 
 export interface Projected {
   x: number
@@ -50,6 +50,46 @@ export function troopLabelRect(anchorX: number, anchorTop: number, digits: numbe
   const overlaps = x < rocket.x + rocket.w && x + w > rocket.x && y < rocket.y + rocket.h && y + h > rocket.y
   if (overlaps) x = Math.max(margin, Math.min(maxX, rocket.x - margin - w))
   return { x, y, w, h }
+}
+
+/** クリア中に隊長の頭上へ出る匹数。描画と同じ式。 */
+export function armyCountBox(input: {
+  dogs: number
+  lane: number
+  phase: string
+  time: number
+  numPop: number
+  recoil: number
+}): LabelRect {
+  const jump = input.phase === 'clear' ? Math.abs(Math.sin(input.time * 7)) * 16 : 0
+  const captain = project(input.lane, 0)
+  const height = LOOK.captainH * (1 + input.recoil * 0.06)
+  const pop = 1 + input.numPop * 0.35
+  const fontSize = countFontSize(input.dogs) * pop
+  return troopLabelRect(captain.x, captain.y - height - jump, String(Math.max(0, Math.floor(input.dogs))).length, fontSize)
+}
+
+/** クリアの文字。残り秒はこの半分より外側へ膨らむ。 */
+export const CLEAR_WORD = { font: 64, stroke: 10 }
+export const CLEAR_SCORE = { font: 48, stroke: 8 }
+export const CLEAR_PULSE_MAX = 1.04
+const GLYPH_HALF = 0.68
+
+export function textHalf(font: number, stroke: number, pulse = 1): number {
+  return (font * GLYPH_HALF + stroke / 2) * pulse
+}
+
+/**
+ * クリアの見出しと残り秒。頭上の匹数より上に置き、最大の脈動でも重ならない。
+ * labelTop は armyCountBox の上端。
+ */
+export function clearReadout(labelTop: number): { wordY: number; scoreY: number } {
+  const gap = 18
+  const scoreHalf = textHalf(CLEAR_SCORE.font, CLEAR_SCORE.stroke, CLEAR_PULSE_MAX)
+  const wordHalf = textHalf(CLEAR_WORD.font, CLEAR_WORD.stroke, CLEAR_PULSE_MAX)
+  const scoreY = labelTop - gap - scoreHalf
+  const wordY = scoreY - gap - scoreHalf - wordHalf
+  return { wordY, scoreY }
 }
 
 /** 横幅は道の3分の1で止める。あふれた豆柴は後ろへ列を足す。80匹を超えた分は間隔を詰める。 */

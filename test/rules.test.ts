@@ -18,7 +18,17 @@ import {
   TUTORIAL_GATE,
   bossHpMultiplier,
 } from '../src/game/config'
-import { beanOffsets, project, troopLabelRect } from '../src/game/layout'
+import {
+  armyCountBox,
+  beanOffsets,
+  CLEAR_PULSE_MAX,
+  CLEAR_SCORE,
+  CLEAR_WORD,
+  clearReadout,
+  project,
+  textHalf,
+  troopLabelRect,
+} from '../src/game/layout'
 import { buildSchedule, stageFeatures } from '../src/game/level'
 import { applyGate, bumpGate, countFontSize, formationHalf, gateLabel, gateTone, isRedGate } from '../src/game/rules'
 
@@ -214,4 +224,27 @@ test('左端の隊列でも匹数の3桁は画面内に収まる', () => {
   assert.ok(box.w >= fontSize * 3, String(box.w))
   assert.ok(GATE_BODY > 0)
   assert.equal(SHIELD_LOSS, 3)
+})
+
+test('クリアの残り秒は頭上の匹数に重ならない', () => {
+  const scoreHalf = textHalf(CLEAR_SCORE.font, CLEAR_SCORE.stroke, CLEAR_PULSE_MAX)
+  const wordHalf = textHalf(CLEAR_WORD.font, CLEAR_WORD.stroke, CLEAR_PULSE_MAX)
+  for (const dogs of [1, 12, 80, 181, 438, 999]) {
+    for (const time of [0, 0.22, 0.45]) {
+      for (const numPop of [0, 1]) {
+        for (const lane of [-1, 0, 1]) {
+          const box = armyCountBox({ dogs, lane, phase: 'clear', time, numPop, recoil: 1 })
+          const place = clearReadout(box.y)
+          const scoreTop = place.scoreY - scoreHalf
+          const scoreBottom = place.scoreY + scoreHalf
+          const wordTop = place.wordY - wordHalf
+          const wordBottom = place.wordY + wordHalf
+          assert.ok(scoreBottom <= box.y - 12, `${dogs} score ${scoreBottom} label ${box.y}`)
+          assert.ok(wordBottom <= scoreTop - 12, `${dogs} word ${wordBottom} score ${scoreTop}`)
+          assert.ok(wordTop >= 64, `${dogs} word top ${wordTop}`)
+          assert.ok(place.scoreY > place.wordY)
+        }
+      }
+    }
+  }
 })
