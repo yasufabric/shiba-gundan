@@ -71,6 +71,11 @@ export class Game {
     this.paintMute()
   }
 
+  /** touchend / pointerup から同期的に呼ぶ。ピンチ防止の preventDefault より前。 */
+  unlockAudio(): void {
+    this.sfx.unlock()
+  }
+
   start(): void {
     this.fit()
     window.addEventListener('resize', () => this.fit())
@@ -78,10 +83,12 @@ export class Game {
       if (document.hidden) this.sfx.suspend()
       else this.sfx.resume()
     })
+    window.addEventListener('pageshow', () => this.sfx.resume())
     this.canvas.addEventListener('pointerdown', (event) => this.onDown(event))
     this.canvas.addEventListener('pointermove', (event) => this.onMove(event))
     this.canvas.addEventListener('pointerup', () => {
       this.pointing = false
+      this.sfx.unlock()
     })
     this.canvas.addEventListener('pointercancel', () => {
       this.pointing = false
