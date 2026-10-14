@@ -490,11 +490,11 @@ test('盾の猫は本体に弾を通さず、触れると3匹減る', () => {
   assert.equal(sim.dogs, 17)
 })
 
-test('残り時間は面ごとに短くなり、半分外すと3面から負け、寄ると匹数が残る', () => {
-  const skilled = [1, 2, 3, 4].map((stage) => run('smart', 100, stage))
-  const half = [1, 2, 3, 4].map((stage) => run('half', 100, stage))
+test('残り時間は4面まで短くなり、5面からは2秒以上で4面を超えず、半分外すと3面から負ける', () => {
+  const skilled = [1, 2, 3, 4, 5, 6, 7, 8].map((stage) => run('smart', 100, stage))
+  const half = [1, 2, 3, 4, 5, 6, 7, 8].map((stage) => run('half', 100, stage))
   const margins = skilled.map((row) => row.sim.clearMargin)
-  for (let index = 0; index < 4; index += 1) {
+  for (let index = 0; index < 8; index += 1) {
     const stage = index + 1
     console.log(
       `smart s${stage} ${skilled[index]?.sim.phase} dogs=${skilled[index]?.beforeBoss} margin=${margins[index]?.toFixed(2) ?? '-'}`,
@@ -511,7 +511,12 @@ test('残り時間は面ごとに短くなり、半分外すと3面から負け�
   assert.ok(first > second && second > third && third > fourth, margins.join(','))
   assert.ok(first >= 10.5 && first <= 11.5, String(first))
   assert.ok(fourth >= 2.5 && fourth <= 3, String(fourth))
-  for (let index = 0; index < 4; index += 1) {
+  for (let index = 4; index < 8; index += 1) {
+    const margin = margins[index]
+    assert.equal(skilled[index]?.sim.phase, 'clear')
+    assert.ok(margin !== null && margin >= 2 && margin <= fourth, String(margin))
+  }
+  for (let index = 0; index < 8; index += 1) {
     assert.equal(half[index]?.sim.phase, index < 2 ? 'clear' : 'lose')
   }
   const stay = run('stay', 100, 1)

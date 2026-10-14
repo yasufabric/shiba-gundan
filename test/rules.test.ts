@@ -185,24 +185,28 @@ test('1面の並びは変えず、2面以降は要素を1つずつ足す', () =>
   assert.equal(real.length, 2)
   assert.ok(real.every((item) => item.kind === 'boss' && item.hp === BOSS_HP * bossHpMultiplier(4) && item.time === BOSS_SPAWN))
 
-  const laterBoss = buildSchedule(5).find((item) => item.kind === 'boss' && !item.preview)
-  const stage4Boss = real[0]
-  assert.equal(laterBoss?.kind, 'boss')
-  assert.equal(stage4Boss?.kind, 'boss')
-  if (laterBoss?.kind === 'boss' && stage4Boss?.kind === 'boss') assert.ok(laterBoss.hp > stage4Boss.hp)
+  const later = buildSchedule(5).filter((item) => item.kind === 'boss' && !item.preview)
+  assert.equal(later.length, 2)
+  assert.ok(later.every((item) => item.kind === 'boss' && item.hp === later[0]?.hp))
 })
 
-test('ボス体力は面ごとに上がり、匹数では変えない', () => {
+test('ボス体力は面ごとの固定倍率で、匹数では変えない', () => {
   assert.equal(bossHpMultiplier(1), 1)
   assert.ok(Math.abs(bossHpMultiplier(2) - 1.36) < 1e-9)
   assert.ok(Math.abs(bossHpMultiplier(3) - 1.53) < 1e-9)
   assert.ok(Math.abs(bossHpMultiplier(4) - 1.16) < 1e-9)
-  assert.ok(Math.abs(bossHpMultiplier(5) - 1.31) < 1e-9)
-  assert.ok(Math.abs(bossHpMultiplier(6) - 1.46) < 1e-9)
+  for (const stage of [5, 6, 7, 8, 9]) assert.ok(Math.abs(bossHpMultiplier(stage) - 1.029) < 1e-9)
   const stage4 = buildSchedule(4).filter((item) => item.kind === 'boss' && !item.preview)
   assert.equal(stage4.length, 2)
   const total = stage4.reduce((sum, item) => sum + (item.kind === 'boss' ? item.hp : 0), 0)
   assert.ok(Math.abs(total - BOSS_HP * 2.32) < 1)
+  for (const stage of [5, 6, 7, 8]) {
+    const bosses = buildSchedule(stage).filter((item) => item.kind === 'boss' && !item.preview)
+    assert.equal(bosses.length, 2)
+    const pair = bosses.reduce((sum, item) => sum + (item.kind === 'boss' ? item.hp : 0), 0)
+    assert.ok(Math.abs(pair - BOSS_HP * 1.029 * 2) < 1, String(pair))
+    assert.ok(bosses.every((item) => item.kind === 'boss' && item.hp === bosses[0]?.hp))
+  }
 })
 
 test('左端の隊列でも匹数の3桁は画面内に収まる', () => {
