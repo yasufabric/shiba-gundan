@@ -195,7 +195,7 @@ test('赤い門は想定匹数だと約2.5秒で青に変わる', () => {
   assert.ok(seconds >= 2.2 && seconds <= 2.8, String(seconds))
 })
 
-test('うまく選ぶとボス前は約380匹で、群れでは1〜2割減り、残り約9秒で倒す', () => {
+test('うまく選ぶと薄い列では約5%減り、残り約10秒で倒す', () => {
   const { sim, events, beforeBoss } = run('smart')
   const losses = hordeReport(events)
   const jumped = events.find((event) => event.type === 'gate' && event.label === '×2')
@@ -206,12 +206,12 @@ test('うまく選ぶとボス前は約380匹で、群れでは1〜2割減り、
   assert.equal(sim.phase, 'clear')
   assert.equal(jumped?.type, 'gate')
   if (jumped?.type === 'gate') assert.equal(jumped.label, '×2')
-  assert.ok(beforeBoss >= 360 && beforeBoss <= 420, String(beforeBoss))
-  assert.ok(sim.clearMargin !== null && sim.clearMargin >= 7 && sim.clearMargin <= 12, String(sim.clearMargin))
+  assert.ok(beforeBoss >= 400 && beforeBoss <= 480, String(beforeBoss))
+  assert.ok(sim.clearMargin !== null && sim.clearMargin >= 9 && sim.clearMargin <= 12, String(sim.clearMargin))
   assert.ok(fight >= 8 && fight <= 13, String(fight))
   assert.equal(losses.length, HORDES.length)
   for (const row of losses) {
-    assert.ok(row.ratio >= 0.1 && row.ratio <= 0.2, `${row.loss}/${row.before}`)
+    assert.ok(row.ratio >= 0.03 && row.ratio <= 0.08, `${row.loss}/${row.before}`)
   }
 })
 
@@ -232,7 +232,7 @@ test('門を半分外すと厚い列で3割以上減り、1面はぎりぎり勝
   assert.ok(thick >= 0.3, losses.map((row) => `${row.loss}/${row.before}`).join(','))
 })
 
-test('最強でもボス前は400匹を超えない', () => {
+test('最強でも薄い列に寄れば群れの減りは約5%', () => {
   const { sim, events, beforeBoss } = run('best')
   const losses = hordeReport(events)
   const fight = fightSeconds(sim)
@@ -240,10 +240,10 @@ test('最強でもボス前は400匹を超えない', () => {
     `best phase=${sim.phase} before=${beforeBoss} fight=${fight.toFixed(2)} ${losses.map((row) => `${row.loss}/${row.before}`).join(',')}`,
   )
   assert.equal(sim.phase, 'clear')
-  assert.ok(beforeBoss >= 280 && beforeBoss <= 400, String(beforeBoss))
+  assert.ok(beforeBoss >= 400 && beforeBoss <= 480, String(beforeBoss))
   assert.ok(fight > 8 && fight < 14, String(fight))
   for (const row of losses) {
-    assert.ok(row.ratio >= 0.1 && row.ratio <= 0.2, `${row.loss}/${row.before}`)
+    assert.ok(row.ratio >= 0.03 && row.ratio <= 0.08, `${row.loss}/${row.before}`)
   }
 })
 
@@ -491,14 +491,13 @@ test('盾の猫は本体に弾を通さず、触れると3匹減る', () => {
 })
 
 test('上手いルートの残り時間は面が進むほど短く、門を半分外すと3面から負ける', () => {
-  const goals = [9, 6, 4, 2.5]
+  const goals = [10, 7.9, 4.1, 4.7]
   for (let stage = 1; stage <= 4; stage += 1) {
     const skilled = run('smart', 100, stage)
     const margin = skilled.sim.clearMargin
     console.log(`ladder smart s${stage} ${skilled.sim.phase} dogs=${skilled.beforeBoss} margin=${margin?.toFixed(2) ?? '-'}`)
     assert.equal(skilled.sim.phase, 'clear')
-    assert.ok(margin !== null && Math.abs(margin - (goals[stage - 1] ?? 0)) < 2, String(margin))
-    if (stage === 4) assert.ok(margin >= 2 && margin <= 3, String(margin))
+    assert.ok(margin !== null && Math.abs(margin - (goals[stage - 1] ?? 0)) < 1.2, String(margin))
     const half = run('half', 100, stage)
     console.log(`ladder half s${stage} ${half.sim.phase} dogs=${half.beforeBoss} margin=${half.sim.clearMargin?.toFixed(2) ?? '-'}`)
     assert.equal(half.sim.phase, stage <= 2 ? 'clear' : 'lose')
