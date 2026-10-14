@@ -27,6 +27,8 @@ export interface GateSpawn {
   right: GateDef
   drum: DrumDef | null
   slide: number
+  /** 省略すると通常の湧き距離。 */
+  dist?: number
 }
 
 export interface CatSpawn {
@@ -123,6 +125,7 @@ export function buildSchedule(stage: number): Spawn[] {
       right: { kind: 'add', amount: TUTORIAL_GATE.right },
       drum: null,
       slide: GATE_SLIDE,
+      dist: TUTORIAL_GATE.dist,
     })
   }
   for (const pair of GATE_PAIRS) {

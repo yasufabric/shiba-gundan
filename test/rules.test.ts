@@ -10,6 +10,8 @@ import {
   HORDE_MAX,
   HORDE_ROWS,
   MINI_BOSS,
+  SCROLL_SPEED,
+  SPAWN_DIST,
   START_DOGS,
   TUTORIAL_GATE,
 } from '../src/game/config'
@@ -135,15 +137,17 @@ test('1面の並びは変えず、2面以降は要素を1つずつ足す', () =>
   assert.ok(stageFeatures(5).pressure > 1)
 
   const slide = buildSchedule(2).filter((item) => item.kind === 'gates')
-  const tutorial = slide[0]
+  const tutorial = slide.find((item) => item.kind === 'gates' && item.time === TUTORIAL_GATE.time)
   assert.equal(tutorial?.kind, 'gates')
   if (tutorial?.kind === 'gates') {
     assert.ok(tutorial.time < 10)
-    assert.equal(tutorial.time, TUTORIAL_GATE.time)
     assert.ok(tutorial.slide > 0)
     assert.equal(tutorial.left.amount > 0 && tutorial.right.amount > 0, true)
+    const seen = tutorial.time + (tutorial.dist ?? SPAWN_DIST) / SCROLL_SPEED
+    assert.ok(seen < 10, String(seen))
+    assert.ok(seen > GATE_PAIRS[0].time + SPAWN_DIST / SCROLL_SPEED)
   }
-  assert.ok(slide.slice(1).every((item) => item.kind === 'gates' && item.slide > 0))
+  assert.ok(slide.every((item) => item.kind === 'gates' && item.slide > 0))
   const boss2 = buildSchedule(2).find((item) => item.kind === 'boss')
   assert.equal(boss2?.kind === 'boss' ? boss2.hp : 0, BOSS_HP)
 

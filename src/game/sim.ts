@@ -80,7 +80,7 @@ function spawnOne(sim: Sim, item: Spawn): void {
           id: sim.nextId++,
           pairId,
           side: side.side,
-          dist: SPAWN_DIST,
+          dist: item.dist ?? SPAWN_DIST,
           op: { kind: side.op.kind, amount: side.op.amount },
           passed: false,
           flash: 0,

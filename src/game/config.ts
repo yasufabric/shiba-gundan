@@ -162,10 +162,15 @@ export const STAGE_KEY = 'shiba-gundan-stage'
 /** 揺れる門。チュートリアルは最初の10秒、どちらを通っても増える青。 */
 export const GATE_SLIDE = 0.32
 export const GATE_SLIDE_RATE = 1.35
+/**
+ * 最初の門をくぐったあと、近くに短く出す。
+ * その前に増やすと、あとの門へ当たる弾まで増えて1面の匹数から離れる。
+ */
 export const TUTORIAL_GATE = {
-  time: 0.8,
-  left: 4,
-  right: 3,
+  time: 7.6,
+  left: 1,
+  right: 1,
+  dist: 120,
 }
 
 /** 盾は正面で弾を受け、0になるまで本体に通さない。 */
