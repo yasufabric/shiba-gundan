@@ -182,21 +182,29 @@ export const BOSS_FACE = 78
  * これ以上は、門を半分外すルートが2面で負ける。
  * 3面 1.53。薄い列の盾猫でも約350匹残るので、約4秒まで上げた。
  * 4面は1体 1.16。上手いルートの残りは約2.7秒で、3面の約4秒より短い。
- * 5面からは 1体あたり 0.15 ずつ足す。匹数では変えない。
+ * 5〜8面は1体 1.029。自動プレイで逆算し、上手いルートの残りが約2.4秒になる値。
+ * 1.027〜1.031 の帯が同じ秒数で、その中央。9面以降もこの倍率。匹数では変えない。
  */
 export const STAGE_BOSS_MULT = [1, 1.36, 1.53] as const
 /**
- * 4面以降のボス1体。5面から STAGE_HP_STEP を足す。
- * 1.06 だと残り約4.7秒なので、2.5〜3秒に合わせて 1.16。
+ * 4面のボス1体。1.06 だと残り約4.7秒なので、2.5〜3秒に合わせて 1.16。
  */
 export const TWIN_BOSS_HP_SCALE = 1.16
+/**
+ * 5〜8面のボス1体。2体いるときは同じ値を分け、合計はその2倍。
+ * 盾が割れないので面ごとの逆算は同じ倍率に揃った。
+ */
+export const LATER_BOSS_MULT = [1.029, 1.029, 1.029, 1.029] as const
+/** 5面からの猫の体力。ボス倍率には足さない。 */
 export const STAGE_HP_STEP = 0.15
 
 /** 面ごとのボス体力倍率。4面以降はボス1体ぶん。 */
 export function bossHpMultiplier(stage: number): number {
   const safe = Math.max(1, Math.floor(stage))
   if (safe <= 3) return STAGE_BOSS_MULT[safe - 1] ?? 1
-  return TWIN_BOSS_HP_SCALE + (safe - 4) * STAGE_HP_STEP
+  if (safe === 4) return TWIN_BOSS_HP_SCALE
+  const index = Math.min(safe, 8) - 5
+  return LATER_BOSS_MULT[index] ?? LATER_BOSS_MULT[LATER_BOSS_MULT.length - 1] ?? TWIN_BOSS_HP_SCALE
 }
 
 export const CLEAR_HOLD = 1.7
