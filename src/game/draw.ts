@@ -1,5 +1,12 @@
 import { BOSS_REACH, GATE_BODY, LOOK, SCROLL_SPEED, SPAWN_DIST, VIEW_H, VIEW_W } from './config'
-import { beanOffsets, project, troopLabelRect } from './layout'
+import {
+  armyCountBox,
+  beanOffsets,
+  CLEAR_SCORE,
+  CLEAR_WORD,
+  clearReadout,
+  project,
+} from './layout'
 import { countFontSize, gateLabel, gateTone } from './rules'
 import type { SpriteSet } from './sprites'
 import type { Bullet, Cat, Drum, Gate, Sim } from './types'
@@ -272,7 +279,6 @@ function drawGate(ctx: CanvasRenderingContext2D, gate: Gate): void {
   ctx.save()
   ctx.translate(at.x, at.y - hop)
   ctx.scale(swell, swell)
-  if (gate.flash > 0) ctx.globalAlpha = 0.72 + gate.flash * 0.28
   const glow = ctx.createLinearGradient(x, y, x, y + height)
   if (tone === 'blue') {
     glow.addColorStop(0, '#b9ecff')
@@ -287,8 +293,19 @@ function drawGate(ctx: CanvasRenderingContext2D, gate: Gate): void {
   ctx.fillStyle = glow
   ctx.fill()
   ctx.lineWidth = Math.max(3, 7 * at.scale)
-  ctx.strokeStyle = gate.flash > 0.2 ? '#fff6df' : INK
+  ctx.strokeStyle = INK
   ctx.stroke()
+  if (gate.flash > 0) {
+    ctx.save()
+    ctx.globalAlpha = 0.14 + gate.flash * 0.2
+    ctx.fillStyle = tone === 'blue' ? '#d7f4ff' : '#ffe4ea'
+    roundRect(ctx, x, y, width, height, 16 * at.scale)
+    ctx.fill()
+    ctx.restore()
+    ctx.lineWidth = Math.max(3, (4 + gate.flash * 3) * at.scale)
+    ctx.strokeStyle = `rgba(255, 246, 223, ${0.4 + gate.flash * 0.45})`
+    ctx.stroke()
+  }
 
   ctx.fillStyle = 'rgba(255,255,255,0.28)'
   roundRect(ctx, x + 6 * at.scale, y + 6 * at.scale, width - 12 * at.scale, height * 0.28, 8 * at.scale)
@@ -299,17 +316,11 @@ function drawGate(ctx: CanvasRenderingContext2D, gate: Gate): void {
   ctx.font = `${fontSize}px ${FONT}`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.lineWidth = Math.max(2, fontSize * 0.12)
+  ctx.lineWidth = Math.max(3, fontSize * 0.16)
   ctx.strokeStyle = INK
   ctx.strokeText(label, 0, y + height * 0.58)
   ctx.fillStyle = '#fffdf8'
   ctx.fillText(label, 0, y + height * 0.58)
-  if (gate.flash > 0) {
-    ctx.globalCompositeOperation = 'lighter'
-    ctx.fillStyle = `rgba(255,255,255,${0.35 + gate.flash * 0.65})`
-    roundRect(ctx, x, y, width, height, 16 * at.scale)
-    ctx.fill()
-  }
   ctx.restore()
 }
 
@@ -387,24 +398,58 @@ function eye(ctx: CanvasRenderingContext2D, x: number, y: number, fur: Fur, angr
   ctx.stroke()
 }
 
+let shieldPlate: HTMLCanvasElement | null = null
+
+function shieldContext(): CanvasRenderingContext2D | null {
+  if (!shieldPlate) {
+    shieldPlate = document.createElement('canvas')
+    shieldPlate.width = VIEW_W
+    shieldPlate.height = VIEW_H
+  }
+  return shieldPlate.getContext('2d')
+}
+
+function resetShields(): void {
+  const plate = shieldContext()
+  if (!plate) return
+  plate.setTransform(1, 0, 0, 1, 0, 0)
+  plate.clearRect(0, 0, VIEW_W, VIEW_H)
+  plate.lineJoin = 'round'
+  plate.lineCap = 'round'
+}
+
+/** 盾は不透明に重ね、画面へは一度だけ乗せる。重なりで白く足さない。 */
+function paintShield(cat: Cat, x: number, y: number, h: number, scale: number): void {
+  if (cat.shield <= 0 || cat.maxShield <= 0) return
+  const plate = shieldContext()
+  if (!plate) return
+  const guard = cat.shield / cat.maxShield
+  plate.save()
+  plate.translate(x, y - h * 0.3)
+  const blue = Math.round(150 + guard * 28)
+  plate.strokeStyle = `rgb(64, ${blue}, 198)`
+  plate.lineWidth = Math.max(1.4, 2.1 * scale)
+  plate.beginPath()
+  plate.ellipse(0, 0, h * 0.22, h * 0.28, 0, Math.PI * 1.16, Math.PI * 1.84)
+  plate.stroke()
+  plate.restore()
+}
+
+function blitShields(ctx: CanvasRenderingContext2D): void {
+  if (!shieldPlate) return
+  ctx.save()
+  ctx.globalAlpha = 0.62
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.drawImage(shieldPlate, 0, 0, VIEW_W, VIEW_H)
+  ctx.restore()
+}
+
 function drawCat(ctx: CanvasRenderingContext2D, cat: Cat, time: number): void {
   const at = project(cat.lane, Math.max(0, cat.dist))
   const bob = Math.sin(time * 8 + cat.variant) * 1.4 * at.scale
   const h = LOOK.catH * (cat.brute ? LOOK.bruteMul : LOOK.hordeMul) * at.scale
   const fur = FURS[cat.variant] ?? FURS[0]
-  if (cat.shield > 0 && cat.maxShield > 0) {
-    const guard = cat.shield / cat.maxShield
-    ctx.save()
-    ctx.translate(at.x, at.y + bob - h * 0.34)
-    ctx.strokeStyle = `rgba(186, 230, 255, ${0.45 + guard * 0.5})`
-    ctx.fillStyle = `rgba(210, 244, 255, ${0.18 + guard * 0.28})`
-    ctx.lineWidth = Math.max(2, 4 * at.scale)
-    ctx.beginPath()
-    ctx.ellipse(0, 0, h * 0.34, h * 0.46, 0, Math.PI * 1.05, Math.PI * 1.95)
-    ctx.fill()
-    ctx.stroke()
-    ctx.restore()
-  }
+  paintShield(cat, at.x, at.y + bob, h, at.scale)
   if (cat.brute) paintCat(ctx, at.x, at.y + bob, h / 84, fur, false, cat.flash, time + cat.id)
   else paintHordeCat(ctx, at.x, at.y + bob, h / 84, fur, cat.flash)
 }
@@ -741,7 +786,14 @@ function drawArmy(ctx: CanvasRenderingContext2D, state: RenderState): void {
   ctx.font = `${fontSize}px ${FONT}`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  const box = troopLabelRect(captain.x, captain.y - h - jump, label.length, fontSize)
+  const box = armyCountBox({
+    dogs: sim.dogs,
+    lane: sim.lane,
+    phase: sim.phase,
+    time: state.time,
+    numPop: state.numPop,
+    recoil: state.recoil,
+  })
   roundRect(ctx, box.x, box.y, box.w, box.h, 10)
   ctx.fillStyle = '#fff6df'
   ctx.fill()
@@ -862,6 +914,29 @@ function drawBossBar(ctx: CanvasRenderingContext2D, sim: Sim): void {
   }
 }
 
+function paintCentered(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  y: number,
+  font: number,
+  stroke: number,
+  fill: string | CanvasGradient,
+  pulse: number,
+): void {
+  ctx.save()
+  ctx.translate(VIEW_W / 2, y)
+  ctx.scale(pulse, pulse)
+  ctx.font = `${font}px ${FONT}`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.lineWidth = stroke
+  ctx.strokeStyle = INK
+  ctx.strokeText(text, 0, 0)
+  ctx.fillStyle = fill
+  ctx.fillText(text, 0, 0)
+  ctx.restore()
+}
+
 function drawResult(ctx: CanvasRenderingContext2D, state: RenderState): void {
   const { sim, resultAge } = state
   if (sim.phase === 'play') return
@@ -869,37 +944,31 @@ function drawResult(ctx: CanvasRenderingContext2D, state: RenderState): void {
   if (sim.phase === 'lose' && resultAge < 0.12) return
   ctx.fillStyle = sim.phase === 'clear' ? 'rgba(20, 8, 32, 0.28)' : 'rgba(8, 4, 16, 0.45)'
   ctx.fillRect(0, 0, VIEW_W, VIEW_H)
-  const word = sim.phase === 'clear' ? 'クリア' : 'ざんねん'
   const pulse = 1 + Math.sin(state.time * 5) * 0.04
-  ctx.save()
-  ctx.translate(VIEW_W / 2, sim.phase === 'clear' ? 300 : 250)
-  ctx.scale(pulse, pulse)
-  ctx.font = `64px ${FONT}`
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.lineWidth = 10
-  ctx.strokeStyle = INK
-  ctx.strokeText(word, 0, 0)
-  const grad = ctx.createLinearGradient(0, -30, 0, 30)
-  if (sim.phase === 'clear') {
-    grad.addColorStop(0, '#fff4b8')
-    grad.addColorStop(1, '#ffb43a')
-  } else {
+  if (sim.phase === 'lose') {
+    const grad = ctx.createLinearGradient(0, 220, 0, 280)
     grad.addColorStop(0, '#d7e4ff')
     grad.addColorStop(1, '#8aa4d4')
+    paintCentered(ctx, 'ざんねん', 250, CLEAR_WORD.font, CLEAR_WORD.stroke, grad, pulse)
+    return
   }
-  ctx.fillStyle = grad
-  ctx.fillText(word, 0, 0)
-  if (sim.phase === 'clear' && sim.clearMargin !== null) {
+  const box = armyCountBox({
+    dogs: sim.dogs,
+    lane: sim.lane,
+    phase: sim.phase,
+    time: state.time,
+    numPop: state.numPop,
+    recoil: state.recoil,
+  })
+  const place = clearReadout(box.y)
+  const grad = ctx.createLinearGradient(0, place.wordY - 30, 0, place.wordY + 30)
+  grad.addColorStop(0, '#fff4b8')
+  grad.addColorStop(1, '#ffb43a')
+  paintCentered(ctx, 'クリア', place.wordY, CLEAR_WORD.font, CLEAR_WORD.stroke, grad, pulse)
+  if (sim.clearMargin !== null) {
     const score = String(Math.max(0, Math.round(sim.clearMargin)))
-    ctx.font = `48px ${FONT}`
-    ctx.lineWidth = 8
-    ctx.strokeStyle = INK
-    ctx.strokeText(score, 0, 86)
-    ctx.fillStyle = '#d6ff3a'
-    ctx.fillText(score, 0, 86)
+    paintCentered(ctx, score, place.scoreY, CLEAR_SCORE.font, CLEAR_SCORE.stroke, '#d6ff3a', pulse)
   }
-  ctx.restore()
 }
 
 function drawWorldItem(
@@ -975,6 +1044,7 @@ export function render(ctx: CanvasRenderingContext2D, state: RenderState): void 
   const oy = Math.cos(state.time * 37) * mag
   ctx.save()
   ctx.translate(ox, oy)
+  resetShields()
   const plate = ensureBackdrop(ctx.canvas.width, ctx.canvas.height)
   ctx.drawImage(plate, 0, 0, VIEW_W, VIEW_H)
   drawBossApproach(ctx, state.sim, state.time)
@@ -986,6 +1056,7 @@ export function render(ctx: CanvasRenderingContext2D, state: RenderState): void 
   state.sim.bullets.forEach((bullet, index) => order.push({ dist: bullet.dist, kind: 'bullet', index }))
   order.sort((a, b) => b.dist - a.dist)
   for (const item of order) drawWorldItem(ctx, state, item.kind, item.index)
+  blitShields(ctx)
   drawBoss(ctx, state.sim, state.time)
   drawArmy(ctx, state)
   drawFlyers(ctx, state)
