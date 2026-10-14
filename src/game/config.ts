@@ -150,13 +150,59 @@ export const BOSS_REACH = 36
 export const BOSS_HIT_HALF = 1.05
 export const BOSS_FACE = 78
 
-/** 2ステージ目以降。1ステージ分ずつ足す。猫は匹数も少し増やす。 */
-export const STAGE_CAT_HP_STEP = 0.22
-export const STAGE_LATE_CAT_HP_STEP = 2.2
-export const STAGE_LATE_CAT_AFTER = 36
-export const STAGE_BOSS_HP_STEP = 0.32
-export const STAGE2_HORDE_EXTRA = 2
-export const STAGE2_HORDE_EXTRA_AFTER = 36
+/**
+ * 1面の数字はそのまま。
+ * 2面は門が左右に揺れる。3面は盾の猫。4面はボスが2体。
+ * 5面からはそれらを重ね、群れとボスの体力だけ少し上げる。
+ */
+export const STAGE_PRESSURE = 0.18
+export const CLEAR_HOLD = 1.7
+export const STAGE_KEY = 'shiba-gundan-stage'
+
+/** 揺れる門。チュートリアルは最初の10秒、どちらを通っても増える青。 */
+export const GATE_SLIDE = 0.32
+export const GATE_SLIDE_RATE = 1.35
+/**
+ * 最初の門をくぐったあと、近くに短く出す。
+ * その前に増やすと、あとの門へ当たる弾まで増えて1面の匹数から離れる。
+ */
+export const TUTORIAL_GATE = {
+  time: 7.6,
+  left: 1,
+  right: 1,
+  dist: 120,
+}
+
+/** 盾は正面で弾を受け、0になるまで本体に通さない。 */
+export const SHIELD_HP = 520
+export const TUTORIAL_SHIELD = {
+  time: 1.1,
+  count: 3,
+  hp: 1,
+  shield: 1,
+  /** 奥へずらす間隔。1本の弾筋で手前から順に倒せる。 */
+  depth: 140,
+}
+
+/** 4面の手前に出す、すぐ倒せる小さなボス。 */
+export const MINI_BOSS = {
+  time: 1.4,
+  hp: 160,
+}
+export const TWIN_BOSS_HP_SCALE = 0.72
+export const TWIN_BOSS_GAP = 170
+
+/** 曲。音程の再生は AudioContext.currentTime に予約する。 */
+export const MUSIC = {
+  bpm: 132,
+  bossBpmFar: 124,
+  bossBpmNear: 150,
+  lookahead: 0.2,
+  bass: 0.055,
+  drum: 0.06,
+  lead: 0.04,
+  hat: 0.022,
+}
 
 export const LOOK = {
   horizonY: 250,

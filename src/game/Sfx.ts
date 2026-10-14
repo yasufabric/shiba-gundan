@@ -104,6 +104,7 @@ export class Sfx {
   private hitAt = 0
   private catAt = 0
   private tickAt = 0
+  private unlocked = false
   muted: boolean
 
   constructor(muted = false) {
@@ -111,8 +112,25 @@ export class Sfx {
   }
 
   unlock(): void {
+    this.unlocked = true
     const ctx = this.ensure()
     if (ctx.state === 'suspended') void ctx.resume()
+  }
+
+  suspend(): void {
+    if (this.ctx && this.ctx.state === 'running') void this.ctx.suspend()
+  }
+
+  resume(): void {
+    if (!this.unlocked || !this.ctx) return
+    if (this.ctx.state === 'suspended') void this.ctx.resume()
+  }
+
+  /** 曲が音を予約できるときだけ返す。ミュート中と、まだタップしていないときは null。 */
+  bus(): { ctx: AudioContext; out: GainNode } | null {
+    if (!this.unlocked || this.muted || !this.ctx || !this.master) return null
+    if (this.ctx.state !== 'running') return null
+    return { ctx: this.ctx, out: this.master }
   }
 
   toggle(): boolean {

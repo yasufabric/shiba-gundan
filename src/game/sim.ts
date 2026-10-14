@@ -3,6 +3,7 @@ import {
   BOSS_HIT_HALF,
   BOSS_REACH,
   BOSS_SPEED,
+  GATE_SLIDE_RATE,
   BULLET_HIT_DIST,
   BULLET_HIT_LANE,
   BULLET_SPEED,
@@ -49,6 +50,7 @@ export function createSim(stage = 1): Sim {
     drums: [],
     bullets: [],
     boss: null,
+    bosses: [],
     clearedAt: null,
     catLeaks: 0,
     nextId: 1,
@@ -78,12 +80,15 @@ function spawnOne(sim: Sim, item: Spawn): void {
           id: sim.nextId++,
           pairId,
           side: side.side,
-          dist: SPAWN_DIST,
+          dist: item.dist ?? SPAWN_DIST,
           op: { kind: side.op.kind, amount: side.op.amount },
           passed: false,
           flash: 0,
           pop: 0,
           sealed: false,
+          slide: item.slide,
+          phase: item.time,
+          shift: 0,
         }
         sim.gates.push(gate)
       }
@@ -98,6 +103,7 @@ function spawnOne(sim: Sim, item: Spawn): void {
           maxHp: item.drum.hp,
           alive: true,
           flash: 0,
+          baseLane: side * DRUM_LANE,
         }
         sim.drums.push(drum)
       }
@@ -114,21 +120,25 @@ function spawnOne(sim: Sim, item: Spawn): void {
         variant: item.variant,
         flash: 0,
         alive: true,
+        shield: item.shield,
+        maxShield: item.shield,
       }
       sim.cats.push(cat)
       return
     }
     case 'boss': {
-      if (sim.boss) return
       const boss: Boss = {
-        dist: SPAWN_DIST,
+        dist: SPAWN_DIST + (item.behind || 0),
+        lane: item.lane || 0,
         hp: item.hp,
         maxHp: item.hp,
         flash: 0,
         spawnedAt: sim.time,
         stoppedAt: null,
+        preview: item.preview === true,
       }
-      sim.boss = boss
+      sim.bosses.push(boss)
+      syncLead(sim)
       return
     }
     default: {
@@ -176,8 +186,32 @@ function launchRocket(sim: Sim): void {
 }
 
 function gateCovers(gate: Gate, lane: number): boolean {
-  if (gate.side < 0) return lane <= -GATE_GAP
-  return lane >= GATE_GAP
+  const center = gate.shift
+  if (gate.side < 0) return lane <= center - GATE_GAP
+  return lane >= center + GATE_GAP
+}
+
+function syncLead(sim: Sim): void {
+  let lead: Boss | null = null
+  for (const boss of sim.bosses) {
+    if (boss.hp <= 0) continue
+    if (!lead || boss.dist < lead.dist) lead = boss
+  }
+  sim.boss = lead ?? sim.bosses[sim.bosses.length - 1] ?? null
+}
+
+function realBosses(sim: Sim): Boss[] {
+  return sim.bosses.filter((boss) => !boss.preview)
+}
+
+function maybeClear(sim: Sim): void {
+  const real = realBosses(sim)
+  if (real.length === 0 || sim.phase !== 'play') return
+  if (real.every((boss) => boss.hp <= 0)) {
+    sim.phase = 'clear'
+    sim.clearedAt = sim.time
+    sim.events.push({ type: 'boss-down' })
+  }
 }
 
 function overlapsFormation(sim: Sim, lane: number, radius: number): boolean {
@@ -191,7 +225,8 @@ function resolveGates(sim: Sim): void {
     if (!gate.passed && gate.dist <= 0) ready.add(gate.pairId)
   }
   for (const pairId of ready) {
-    const side: -1 | 1 = sim.lane < 0 ? -1 : 1
+    const center = sim.gates.find((gate) => gate.pairId === pairId)?.shift ?? 0
+    const side: -1 | 1 = sim.lane < center ? -1 : 1
     const chosen = sim.gates.find((gate) => gate.pairId === pairId && gate.side === side)
     for (const gate of sim.gates) {
       if (gate.pairId !== pairId) continue
@@ -332,7 +367,8 @@ function strikeCat(sim: Sim, bullet: Bullet): boolean {
   }
   if (!closest) return false
   bullet.alive = false
-  closest.hp -= bullet.damage
+  if (closest.shield > 0) closest.shield = Math.max(0, closest.shield - bullet.damage)
+  else closest.hp -= bullet.damage
   closest.flash = 1
   sim.events.push({ type: 'hit', lane: closest.lane, dist: closest.dist, target: 'cat' })
   if (closest.hp <= 0) {
@@ -348,19 +384,27 @@ function strikeCat(sim: Sim, bullet: Bullet): boolean {
 }
 
 function strikeBoss(sim: Sim, bullet: Bullet): boolean {
-  const boss = sim.boss
-  if (!boss || boss.hp <= 0) return false
-  if (Math.abs(bullet.dist - boss.dist) > BOSS_FACE) return false
-  if (Math.abs(bullet.lane) > BOSS_HIT_HALF) return false
+  let boss: Boss | null = null
+  let best = Infinity
+  for (const candidate of sim.bosses) {
+    if (candidate.hp <= 0) continue
+    if (Math.abs(bullet.dist - candidate.dist) > BOSS_FACE) continue
+    const laneGap = Math.abs(bullet.lane - candidate.lane)
+    if (laneGap > BOSS_HIT_HALF) continue
+    const rank = candidate.dist + laneGap * 40
+    if (rank < best) {
+      boss = candidate
+      best = rank
+    }
+  }
+  if (!boss) return false
   bullet.alive = false
   boss.hp -= bullet.bossDamage
   boss.flash = 1
   sim.events.push({ type: 'hit', lane: bullet.lane, dist: boss.dist, target: 'boss' })
-  if (boss.hp <= 0 && sim.phase === 'play') {
+  if (boss.hp <= 0) {
     boss.hp = 0
-    sim.phase = 'clear'
-    sim.clearedAt = sim.time
-    sim.events.push({ type: 'boss-down' })
+    if (!boss.preview) maybeClear(sim)
   }
   return true
 }
@@ -398,6 +442,7 @@ export function step(sim: Sim, dt: number, targetLane: number | null, rocket = f
 
   for (const gate of sim.gates) {
     gate.pop = Math.max(0, gate.pop - stepDt * 3.4)
+    gate.shift = gate.slide === 0 ? 0 : Math.sin(sim.time * GATE_SLIDE_RATE + gate.phase) * gate.slide
     if (gate.passed) gate.flash = Math.max(0, gate.flash - stepDt * 2.4)
     else {
       gate.dist -= SCROLL_SPEED * stepDt
@@ -411,12 +456,15 @@ export function step(sim: Sim, dt: number, targetLane: number | null, rocket = f
   }
   for (const drum of sim.drums) {
     if (!drum.alive) continue
+    const gate = gateForDrum(sim, drum)
+    drum.lane = drum.baseLane + (gate?.shift ?? 0)
     drum.dist -= SCROLL_SPEED * stepDt
     drum.flash = Math.max(0, drum.flash - stepDt * 6)
   }
-  if (sim.boss && sim.boss.hp > 0) {
-    sim.boss.flash = Math.max(0, sim.boss.flash - stepDt * 5)
-    sim.boss.dist = Math.max(BOSS_REACH, sim.boss.dist - BOSS_SPEED * stepDt)
+  for (const boss of sim.bosses) {
+    if (boss.hp <= 0) continue
+    boss.flash = Math.max(0, boss.flash - stepDt * 5)
+    boss.dist = Math.max(BOSS_REACH, boss.dist - BOSS_SPEED * stepDt)
   }
 
   sim.rocketCd = Math.max(0, sim.rocketCd - stepDt)
@@ -444,10 +492,18 @@ export function step(sim: Sim, dt: number, targetLane: number | null, rocket = f
   resolveGates(sim)
   resolveDrums(sim)
   resolveCats(sim)
-  if (sim.boss && sim.boss.hp > 0 && sim.boss.dist <= BOSS_REACH && sim.phase === 'play') {
-    sim.boss.stoppedAt = sim.time
+  for (const boss of sim.bosses) {
+    if (boss.hp <= 0 || boss.dist > BOSS_REACH || sim.phase !== 'play') continue
+    boss.dist = BOSS_REACH
+    if (boss.preview) {
+      boss.hp = 0
+      continue
+    }
+    boss.stoppedAt = sim.time
     lose(sim)
+    break
   }
+  syncLead(sim)
 
   sim.gates = sim.gates.filter((gate) => !gate.passed || gate.flash > 0)
   sim.cats = sim.cats.filter((cat) => cat.alive && cat.dist > -80)

@@ -16,6 +16,12 @@ export interface Gate {
   pop: number
   /** ドラム缶を壊さずに通り過ぎた側は、もう弾が数字を増やさない。 */
   sealed: boolean
+  /** 0 なら揺られない。左右の振れ幅。 */
+  slide: number
+  /** ペアで揃える位相。 */
+  phase: number
+  /** 今の左右のずれ。1面は常に 0。 */
+  shift: number
 }
 
 export interface Cat {
@@ -28,6 +34,9 @@ export interface Cat {
   variant: number
   flash: number
   alive: boolean
+  /** 正面の盾。0 になるまで本体の体力は減らない。 */
+  shield: number
+  maxShield: number
 }
 
 export interface Drum {
@@ -39,15 +48,20 @@ export interface Drum {
   maxHp: number
   alive: boolean
   flash: number
+  /** 揺れの基準位置。毎フレーム lane をここから足し直す。 */
+  baseLane: number
 }
 
 export interface Boss {
   dist: number
+  lane: number
   hp: number
   maxHp: number
   flash: number
   spawnedAt: number
   stoppedAt: number | null
+  /** 最初の10秒で見せる小さなボス。倒してもクリアにならない。 */
+  preview: boolean
 }
 
 export interface Bullet {
@@ -83,7 +97,9 @@ export interface Sim {
   cats: Cat[]
   drums: Drum[]
   bullets: Bullet[]
+  /** いちばん手前で生きているボス。描画とロケットの対象。 */
   boss: Boss | null
+  bosses: Boss[]
   clearedAt: number | null
   catLeaks: number
   nextId: number

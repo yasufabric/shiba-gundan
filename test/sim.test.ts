@@ -248,6 +248,8 @@ test('弾は隊列の横幅の中だけに飛び、はみ出した猫は豆柴�
     dist: 10,
     hp: 30,
     maxHp: 30,
+    shield: 0,
+    maxShield: 0,
     brute: false,
     variant: 0,
     flash: 0,
@@ -270,6 +272,8 @@ test('隊列の正面にいる猫と、壊していないドラム缶は豆柴�
     dist: 10,
     hp: 40,
     maxHp: 40,
+    shield: 0,
+    maxShield: 0,
     brute: false,
     variant: 0,
     flash: 0,
@@ -288,9 +292,37 @@ test('隊列の正面にいる猫と、壊していないドラム缶は豆柴�
     maxHp: 500,
     alive: true,
     flash: 0,
+    baseLane: 0.58,
   })
   step(sim, DT, 0.78)
   assert.equal(sim.dogs, 12)
+})
+
+test('3面の最初の盾猫は1匹でも倒せて、15秒までは減らない', () => {
+  const sim = createSim(3)
+  let dogs = 1
+  let dropped = false
+  while (sim.time < 16 && sim.phase === 'play') {
+    const frame = step(sim, DT, 0, false)
+    for (const event of frame) {
+      if (event.type === 'hurt') dropped = true
+      if (event.type === 'gate' && event.dogsAfter < dogs) dropped = true
+      if (event.type === 'gate') dogs = event.dogsAfter
+    }
+  }
+  assert.equal(dropped, false)
+  assert.equal(sim.phase, 'play')
+  assert.equal(sim.cats.some((cat) => cat.alive && cat.shield > 0 && cat.maxShield < 20), false)
+})
+
+test('4面の小さなボスは倒れてもクリアにならず、届いても負けにならない', () => {
+  const sim = createSim(4)
+  while (sim.time < 12 && sim.phase === 'play') step(sim, DT, 0, false)
+  const preview = sim.bosses.find((boss) => boss.preview)
+  assert.ok(preview)
+  assert.ok((preview?.hp ?? 1) <= 0)
+  assert.equal(sim.phase, 'play')
+  assert.equal(sim.dogs > 0, true)
 })
 
 test('ボス戦のロケットはボスだけに届く', () => {

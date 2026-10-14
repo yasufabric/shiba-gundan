@@ -51,6 +51,8 @@ export interface RenderState {
   resultAge: number
   recoil: number
   laneVel: number
+  title: boolean
+  bestStage: number
 }
 
 const INK = '#1a1024'
@@ -254,9 +256,10 @@ function drawRoad(ctx: CanvasRenderingContext2D, time: number): void {
 
 function drawGate(ctx: CanvasRenderingContext2D, gate: Gate): void {
   const dist = Math.max(0, gate.dist)
-  const sideLane = gate.side < 0 ? -0.52 : 0.52
+  const shift = gate.shift
+  const sideLane = (gate.side < 0 ? -0.52 : 0.52) + shift
   const at = project(sideLane, dist)
-  const edge = project(gate.side < 0 ? -1 : 1, dist)
+  const edge = project((gate.side < 0 ? -1 : 1) + shift, dist)
   const mid = project(0, dist)
   const width = Math.max(54, Math.abs(edge.x - mid.x) * 0.9)
   const height = LOOK.gateH * at.scale
@@ -389,13 +392,35 @@ function drawCat(ctx: CanvasRenderingContext2D, cat: Cat, time: number): void {
   const bob = Math.sin(time * 8 + cat.variant) * 1.4 * at.scale
   const h = LOOK.catH * (cat.brute ? LOOK.bruteMul : LOOK.hordeMul) * at.scale
   const fur = FURS[cat.variant] ?? FURS[0]
+  if (cat.shield > 0 && cat.maxShield > 0) {
+    const guard = cat.shield / cat.maxShield
+    ctx.save()
+    ctx.translate(at.x, at.y + bob - h * 0.34)
+    ctx.strokeStyle = `rgba(186, 230, 255, ${0.45 + guard * 0.5})`
+    ctx.fillStyle = `rgba(210, 244, 255, ${0.18 + guard * 0.28})`
+    ctx.lineWidth = Math.max(2, 4 * at.scale)
+    ctx.beginPath()
+    ctx.ellipse(0, 0, h * 0.34, h * 0.46, 0, Math.PI * 1.05, Math.PI * 1.95)
+    ctx.fill()
+    ctx.stroke()
+    ctx.restore()
+  }
   if (cat.brute) paintCat(ctx, at.x, at.y + bob, h / 84, fur, false, cat.flash, time + cat.id)
   else paintHordeCat(ctx, at.x, at.y + bob, h / 84, fur, cat.flash)
 }
 
 /** ボスが奥から隊列へ歩いてくる筋。近いほど太く、赤くする。 */
+function nearestBoss(sim: Sim): Sim['boss'] {
+  let lead: Sim['boss'] = null
+  for (const boss of sim.bosses) {
+    if (boss.hp <= 0) continue
+    if (!lead || boss.dist < lead.dist) lead = boss
+  }
+  return lead
+}
+
 function drawBossApproach(ctx: CanvasRenderingContext2D, sim: Sim, time: number): void {
-  const boss = sim.boss
+  const boss = nearestBoss(sim)
   if (!boss || boss.hp <= 0) return
   const closeness = 1 - Math.min(1, Math.max(0, (boss.dist - BOSS_REACH) / (SPAWN_DIST - BOSS_REACH)))
   const at = project(0, Math.max(0, boss.dist))
@@ -417,12 +442,14 @@ function drawBossApproach(ctx: CanvasRenderingContext2D, sim: Sim, time: number)
 }
 
 function drawBoss(ctx: CanvasRenderingContext2D, sim: Sim, time: number): void {
-  const boss = sim.boss
-  if (!boss || boss.hp <= 0) return
-  const at = project(0, boss.dist)
-  const bob = Math.sin(time * 3.2) * 3
-  const h = LOOK.catH * LOOK.bossMul * at.scale
-  paintCat(ctx, at.x, at.y + bob, h / 84, BOSS_FUR, true, boss.flash, time)
+  for (const boss of sim.bosses) {
+    if (boss.hp <= 0) continue
+    const at = project(boss.lane, Math.max(0, boss.dist))
+    const bob = Math.sin(time * 3.2 + boss.lane) * 3
+    const mul = boss.preview ? LOOK.bossMul * 0.62 : LOOK.bossMul
+    const h = LOOK.catH * mul * at.scale
+    paintCat(ctx, at.x, at.y + bob, h / 84, BOSS_FUR, true, boss.flash, time + boss.lane)
+  }
 }
 
 function paintCat(
@@ -780,9 +807,44 @@ function drawFlyers(ctx: CanvasRenderingContext2D, state: RenderState): void {
   }
 }
 
+function drawStageBadge(ctx: CanvasRenderingContext2D, stage: number): void {
+  ctx.save()
+  ctx.font = `28px ${FONT}`
+  ctx.textAlign = 'right'
+  ctx.textBaseline = 'middle'
+  ctx.lineWidth = 5
+  ctx.strokeStyle = INK
+  ctx.strokeText(String(stage), VIEW_W - 16, 28)
+  ctx.fillStyle = '#fff6df'
+  ctx.fillText(String(stage), VIEW_W - 16, 28)
+  ctx.restore()
+}
+
+function drawTitle(ctx: CanvasRenderingContext2D, bestStage: number): void {
+  ctx.fillStyle = 'rgba(12, 6, 22, 0.28)'
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H)
+  ctx.save()
+  ctx.translate(VIEW_W / 2, 300)
+  ctx.font = `92px ${FONT}`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.lineWidth = 12
+  ctx.strokeStyle = INK
+  ctx.strokeText('1', 0, 0)
+  ctx.fillStyle = '#fff6df'
+  ctx.fillText('1', 0, 0)
+  if (bestStage > 1) {
+    ctx.font = `28px ${FONT}`
+    ctx.strokeText(String(bestStage), 0, 78)
+    ctx.fillStyle = '#d6ff3a'
+    ctx.fillText(String(bestStage), 0, 78)
+  }
+  ctx.restore()
+}
+
 function drawBossBar(ctx: CanvasRenderingContext2D, sim: Sim): void {
-  const boss = sim.boss
-  if (!boss) return
+  const boss = nearestBoss(sim)
+  if (!boss || boss.preview) return
   const ratio = Math.max(0, boss.hp / boss.maxHp)
   const x = 70
   const y = 14
@@ -927,8 +989,9 @@ export function render(ctx: CanvasRenderingContext2D, state: RenderState): void 
   drawParticles(ctx, state.particles)
   drawFloaters(ctx, state.floaters)
   drawBossBar(ctx, state.sim)
-  const boss = state.sim.boss
-  if (boss && boss.hp > 0 && state.sim.phase === 'play') {
+  if (!state.title) drawStageBadge(ctx, state.sim.stage)
+  const boss = nearestBoss(state.sim)
+  if (boss && !boss.preview && boss.hp > 0 && state.sim.phase === 'play' && !state.title) {
     const closeness = 1 - Math.min(1, Math.max(0, (boss.dist - BOSS_REACH) / (SPAWN_DIST - BOSS_REACH)))
     if (closeness > 0.35) {
       const edge = ctx.createRadialGradient(VIEW_W / 2, VIEW_H * 0.72, 80, VIEW_W / 2, VIEW_H * 0.55, 520)
@@ -946,6 +1009,7 @@ export function render(ctx: CanvasRenderingContext2D, state: RenderState): void 
     ctx.globalAlpha = 1
   }
   drawResult(ctx, state)
+  if (state.title) drawTitle(ctx, state.bestStage)
 }
 
 export function worldPoint(lane: number, dist: number): { x: number; y: number } {

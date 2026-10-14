@@ -1,6 +1,7 @@
-import { VIEW_H, VIEW_W } from './config'
+import { BOSS_REACH, CLEAR_HOLD, SPAWN_DIST, STAGE_KEY, VIEW_H, VIEW_W } from './config'
 import type { Floater, Flyer, Particle, RenderState } from './draw'
 import { render, worldPoint } from './draw'
+import { Music } from './Music'
 import { Sfx, loadMuted } from './Sfx'
 import { createSim, step } from './sim'
 import { loadSprites } from './sprites'
@@ -25,7 +26,10 @@ export class Game {
   private readonly ctx: CanvasRenderingContext2D
   private readonly sprites = loadSprites()
   private readonly sfx: Sfx
+  private readonly music: Music
   private sim = createSim(1)
+  private title = true
+  private bestStage = 1
   private particles: Particle[] = []
   private flyers: Flyer[] = []
   private floaters: Floater[] = []
@@ -62,12 +66,18 @@ export class Game {
     this.live = stage.live
     this.ctx = ctx
     this.sfx = new Sfx(loadMuted())
+    this.music = new Music(this.sfx)
+    this.bestStage = loadBestStage()
     this.paintMute()
   }
 
   start(): void {
     this.fit()
     window.addEventListener('resize', () => this.fit())
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.sfx.suspend()
+      else this.sfx.resume()
+    })
     this.canvas.addEventListener('pointerdown', (event) => this.onDown(event))
     this.canvas.addEventListener('pointermove', (event) => this.onMove(event))
     this.canvas.addEventListener('pointerup', () => {
@@ -128,21 +138,19 @@ export class Game {
     if (event.button !== 0) return
     event.preventDefault()
     this.sfx.unlock()
+    if (this.title) {
+      this.title = false
+      this.rememberStage(1)
+      this.pointing = true
+      this.targetLane = this.laneFromEvent(event)
+      return
+    }
     const lock = this.sim.phase === 'clear' ? 0.45 : 0.05
     if (this.sim.phase !== 'play' && this.resultAge >= lock) {
       const next = this.sim.phase === 'clear' ? this.sim.stage + 1 : this.sim.stage
-      this.sim = createSim(next)
-      this.particles = []
-      this.flyers = []
-      this.floaters = []
-      this.shake = 0
-      this.flash = 0
-      this.burst = 0
-      this.resultAge = 0
-      this.phaseSeen = 'play'
+      this.beginStage(next)
       this.pointing = true
       this.targetLane = this.laneFromEvent(event)
-      this.syncLive(true)
       return
     }
     this.pointing = true
@@ -159,7 +167,7 @@ export class Game {
     const dt = this.last === 0 ? 0 : Math.min(0.05, (now - this.last) / 1000)
     this.last = now
     this.clock += dt
-    this.acc += dt * this.slow
+    if (!this.title) this.acc += dt * this.slow
     while (this.acc >= STEP) {
       this.tick(STEP)
       this.acc -= STEP
@@ -182,13 +190,17 @@ export class Game {
       resultAge: this.resultAge,
       recoil: this.recoil,
       laneVel: this.laneVel,
+      title: this.title,
+      bestStage: this.bestStage,
     }
     render(this.ctx, state)
+    this.music.pump(this.mood())
     this.publish()
     requestAnimationFrame((next) => this.frameOf(next))
   }
 
   private tick(dt: number): void {
+    if (this.title) return
     const before = this.sim.dogs
     const rocket = this.pendingRocket
     this.pendingRocket = false
@@ -198,6 +210,8 @@ export class Game {
     if (this.sim.dogs !== before) this.numPop = 1
     for (const event of events) this.present(event)
     if (this.sim.phase !== this.phaseSeen) {
+      if (this.sim.phase === 'clear') this.music.sting('clear')
+      if (this.sim.phase === 'lose') this.music.sting('lose')
       this.phaseSeen = this.sim.phase
       this.resultAge = 0
     }
@@ -378,6 +392,10 @@ export class Game {
   }
 
   private decay(dt: number): void {
+    if (!this.title && this.sim.phase === 'clear' && this.resultAge >= CLEAR_HOLD) {
+      this.advance()
+      return
+    }
     if (this.sim.phase !== 'play') this.resultAge += dt
     this.shake = Math.max(0, this.shake - dt * 28)
     this.flash = Math.max(0, this.flash - dt * 1.8)
@@ -416,15 +434,16 @@ export class Game {
   }
 
   private publish(): void {
+    const lead = this.sim.bosses.find((boss) => boss.hp > 0 && !boss.preview)
     this.frame.dataset.time = this.sim.time.toFixed(2)
-    this.frame.dataset.phase = this.sim.phase
+    this.frame.dataset.phase = this.title ? 'title' : this.sim.phase
     this.frame.dataset.dogs = String(this.sim.dogs)
     this.frame.dataset.stage = String(this.sim.stage)
-    this.frame.dataset.boss = this.sim.boss ? String(Math.max(0, Math.ceil(this.sim.boss.hp))) : ''
+    this.frame.dataset.boss = lead ? String(Math.max(0, Math.ceil(lead.hp))) : ''
     this.frame.dataset.cats = String(this.sim.cats.length)
     this.frame.dataset.flip = this.flipHold > 0 ? this.flipLabel : ''
     this.frame.dataset.clash = this.clashHold > 0 ? '1' : ''
-    const bossUp = Boolean(this.sim.boss && this.sim.boss.hp > 0 && this.sim.phase === 'play')
+    const bossUp = Boolean(lead && this.sim.phase === 'play' && !this.title)
     const ready = bossUp && this.sim.rocketCd <= 0
     this.rocket.hidden = !bossUp
     this.rocket.disabled = !ready
@@ -436,9 +455,59 @@ export class Game {
     else if (this.sim.phase === 'lose') this.syncLive(false, 'ざんねん')
   }
 
+  private mood(): { boss: boolean; closeness: number } {
+    let dist = Infinity
+    for (const boss of this.sim.bosses) {
+      if (boss.preview || boss.hp <= 0) continue
+      if (boss.dist < dist) dist = boss.dist
+    }
+    if (!Number.isFinite(dist)) return { boss: false, closeness: 0 }
+    const span = SPAWN_DIST - BOSS_REACH
+    const closeness = 1 - Math.min(1, Math.max(0, (dist - BOSS_REACH) / span))
+    return { boss: true, closeness }
+  }
+
+  private advance(): void {
+    this.beginStage(this.sim.stage + 1)
+  }
+
+  private beginStage(stage: number): void {
+    this.rememberStage(stage)
+    this.sim = createSim(stage)
+    this.particles = []
+    this.flyers = []
+    this.floaters = []
+    this.shake = 0
+    this.flash = 0
+    this.burst = 0
+    this.resultAge = 0
+    this.phaseSeen = 'play'
+    this.title = false
+    this.syncLive(true)
+  }
+
+  private rememberStage(stage: number): void {
+    this.bestStage = Math.max(this.bestStage, stage)
+    try {
+      localStorage.setItem(STAGE_KEY, String(this.bestStage))
+    } catch {
+      // 保存できなくても、その場の進行は続く。
+    }
+  }
+
   private syncLive(force: boolean, text = ''): void {
     if (!force && text === this.liveText) return
     this.liveText = text
     this.live.textContent = text
+  }
+}
+
+function loadBestStage(): number {
+  try {
+    const saved = Number(localStorage.getItem(STAGE_KEY) ?? '1')
+    if (!Number.isFinite(saved) || saved < 1) return 1
+    return Math.floor(saved)
+  } catch {
+    return 1
   }
 }
