@@ -35,8 +35,11 @@ export const CAT_DOG_EXP = 0.5
 export const BOSS_POWER = 7.5
 export const BOSS_DOG_EXP = 0.85
 
-/** ボス戦で隊長アイコンを押したときのロケット。 */
-export const ROCKET_DAMAGE = 650
+/**
+ * ボス戦で隊長アイコンを押したときのロケット。
+ * 約12秒のあいだに撃つ分で、ボス体力の15〜20%を削る。
+ */
+export const ROCKET_DAMAGE = 2100
 export const ROCKET_COOLDOWN = 1.7
 export const ROCKET_SPEED = 980
 
@@ -54,6 +57,9 @@ export const FORMATION = {
   countBase: 44,
   countPer: 0.14,
   countMax: 84,
+  /** 匹数ラベルを画面内に収め、隊長の絵と離す。 */
+  labelMargin: 8,
+  labelGap: 12,
 }
 
 export type GateKind = 'add' | 'mul'
@@ -79,15 +85,21 @@ export interface GatePairDef {
   right: GateDef
   /** 一番いい門の手前。無いペアは null。 */
   drum: DrumDef | null
+  /** この組の × は、弾が当たっても数字が増えない。 */
+  holdMul?: boolean
+  /** 省略すると通常の湧き距離。見本の × は近くに短く出す。 */
+  dist?: number
 }
 
 /**
  * 出現時刻。到達はおよそ time + SPAWN_DIST / SCROLL_SPEED 秒後。
- * 最初の2組は、弾が当たらなくても増える青い門だけ。
+ * 最初の加算の組は、弾が当たらなくても増える青い門。
+ * そのあいだに、撃っても ×2 のままの青い × を一度だけ見せる。
  * 赤い門は 15 秒をすぎてから。そのあとの × は、撃っても ×2 で止まる。
  */
 export const GATE_PAIRS: readonly GatePairDef[] = [
   { time: 4, left: { kind: 'add', amount: 12 }, right: { kind: 'add', amount: 4 }, drum: null },
+  { time: 7.55, left: { kind: 'mul', amount: 2 }, right: { kind: 'add', amount: 28 }, drum: null, holdMul: true, dist: 150 },
   { time: 10, left: { kind: 'add', amount: 10 }, right: { kind: 'add', amount: 6 }, drum: null },
   { time: 16, left: { kind: 'add', amount: -120 }, right: { kind: 'add', amount: -200 }, drum: null },
   { time: 23, left: { kind: 'mul', amount: 2 }, right: { kind: 'add', amount: -9 }, drum: { side: 'left', hp: 48 } },
@@ -141,8 +153,21 @@ export const HORDE_DEPTH = 0
 export const HORDE_ROWS = 1
 export const HORDE_MAX = 240
 
+/**
+ * 群れの薄い帯。レーンの中心と半幅。thin はその帯に残す猫の割合。
+ * 1群目は右が薄く、2群目は左が薄い。真ん中に立ち続ける方が多く減る。
+ */
+export const HORDE_GAPS: readonly { lane: number; half: number; thin: number }[] = [
+  { lane: 0.78, half: 0.46, thin: 0.24 },
+  { lane: -0.78, half: 0.46, thin: 0.24 },
+]
+
 export const BOSS_SPAWN = 41
-export const BOSS_HP = 59000
+/**
+ * 1面のボス体力。上手いルート（ボス前およそ380匹）で、届くまで約9秒残る。
+ * 匹数では変えない。面ごとの倍率は bossHpMultiplier。
+ */
+export const BOSS_HP = 71000
 /** 隊列へ歩く速さ。湧いてから届くまでおよそ20秒。 */
 export const BOSS_SPEED = 44
 /** この距離まで来てまだ生きていれば、隊列に届いて負け。 */
@@ -151,17 +176,38 @@ export const BOSS_HIT_HALF = 1.05
 export const BOSS_FACE = 78
 
 /**
- * 1面の数字はそのまま。
- * 2面は門が左右に揺れる。3面は盾の猫。4面はボスが2体。
- * 5面からはそれらを重ね、群れとボスの体力だけ少し上げる。
+ * 1面のボス体力を 1 とした倍率。
+ * 2面 1.25。3面の初期値は 1.5 だが、盾猫で約190匹まで減るので 1.04（残り約4秒）。
+ * 4面はボス1体あたり 1.06（2体で約2.1）。初期値 0.9 だと残り約6秒だった。
+ * 5面からは 1体あたり 0.15 ずつ足す。匹数では変えない。
  */
-export const STAGE_PRESSURE = 0.18
+export const STAGE_BOSS_MULT = [1, 1.25, 1.04] as const
+/**
+ * 4面以降のボス1体。5面から STAGE_HP_STEP を足す。
+ * 0.9 ずつだと上手いルートの残りが約6秒になるため、2.5秒前後へ合わせて 1.06。
+ */
+export const TWIN_BOSS_HP_SCALE = 1.06
+export const STAGE_HP_STEP = 0.15
+
+/** 面ごとのボス体力倍率。4面以降はボス1体ぶん。 */
+export function bossHpMultiplier(stage: number): number {
+  const safe = Math.max(1, Math.floor(stage))
+  if (safe <= 3) return STAGE_BOSS_MULT[safe - 1] ?? 1
+  return TWIN_BOSS_HP_SCALE + (safe - 4) * STAGE_HP_STEP
+}
+
 export const CLEAR_HOLD = 1.7
 export const STAGE_KEY = 'shiba-gundan-stage'
 
 /** 揺れる門。チュートリアルは最初の10秒、どちらを通っても増える青。 */
 export const GATE_SLIDE = 0.32
 export const GATE_SLIDE_RATE = 1.35
+/** 門の絵の中心。左が負。スライドはこの位置に足す。 */
+export const GATE_BODY = 0.52
+/**
+ * 揺れる門の半幅。隊列がこの中にいないと、その門は外した扱いで増減しない。
+ */
+export const GATE_BODY_HALF = 0.46
 /**
  * 最初の門をくぐったあと、近くに短く出す。
  * その前に増やすと、あとの門へ当たる弾まで増えて1面の匹数から離れる。
@@ -173,8 +219,12 @@ export const TUTORIAL_GATE = {
   dist: 120,
 }
 
-/** 盾は正面で弾を受け、0になるまで本体に通さない。 */
+/**
+ * 盾は正面の弾を受け、本体には通さない。
+ * 隊列に触れた盾猫は、通常の猫の SHIELD_LOSS 倍だけ豆柴を連れていく。
+ */
 export const SHIELD_HP = 520
+export const SHIELD_LOSS = 3
 export const TUTORIAL_SHIELD = {
   time: 1.1,
   count: 3,
@@ -189,7 +239,6 @@ export const MINI_BOSS = {
   time: 1.4,
   hp: 160,
 }
-export const TWIN_BOSS_HP_SCALE = 0.72
 export const TWIN_BOSS_GAP = 170
 
 /** 曲。音程の再生は AudioContext.currentTime に予約する。 */

@@ -22,6 +22,8 @@ export interface Gate {
   phase: number
   /** 今の左右のずれ。1面は常に 0。 */
   shift: number
+  /** × を撃っても数字を増やさない。 */
+  held: boolean
 }
 
 export interface Cat {
@@ -75,7 +77,7 @@ export interface Bullet {
 
 export type SimEvent =
   | { type: 'shoot' }
-  | { type: 'hit'; lane: number; dist: number; target: 'cat' | 'drum' | 'gate' | 'boss' }
+  | { type: 'hit'; lane: number; dist: number; target: 'cat' | 'drum' | 'gate' | 'boss'; heavy: boolean }
   | { type: 'cat-down'; lane: number; dist: number; brute: boolean }
   | { type: 'gate-bump'; lane: number; dist: number; label: string; tone: GateTone; flipped: boolean }
   | { type: 'gate'; good: boolean; lane: number; dist: number; dogsAfter: number; label: string }
@@ -101,6 +103,11 @@ export interface Sim {
   boss: Boss | null
   bosses: Boss[]
   clearedAt: number | null
+  /** クリアした時点で、ボスが隊列に届くまでの残り秒。 */
+  clearMargin: number | null
+  /** ボスに入った通常弾とロケットの実ダメージ。 */
+  bulletBossDamage: number
+  rocketBossDamage: number
   catLeaks: number
   nextId: number
   cursor: number
