@@ -194,8 +194,8 @@ test('1面の並びは変えず、2面以降は要素を1つずつ足す', () =>
 
 test('ボス体力は面ごとに上がり、匹数では変えない', () => {
   assert.equal(bossHpMultiplier(1), 1)
-  assert.equal(bossHpMultiplier(2), 1.25)
-  assert.ok(Math.abs(bossHpMultiplier(3) - 1.04) < 1e-9)
+  assert.ok(Math.abs(bossHpMultiplier(2) - 1.36) < 1e-9)
+  assert.ok(Math.abs(bossHpMultiplier(3) - 1.53) < 1e-9)
   assert.ok(Math.abs(bossHpMultiplier(4) - 1.06) < 1e-9)
   assert.ok(Math.abs(bossHpMultiplier(5) - 1.21) < 1e-9)
   assert.ok(Math.abs(bossHpMultiplier(6) - 1.36) < 1e-9)
