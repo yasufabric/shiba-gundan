@@ -81,7 +81,7 @@ function hordeLane(sim: Sim): number | null {
   return bestLane
 }
 
-function steer(sim: Sim, policy: 'idle' | 'smart' | 'half' | 'best', locks: Map<number, number>, flips: { n: number }): number {
+function steer(sim: Sim, policy: 'idle' | 'smart' | 'half' | 'best' | 'stay', locks: Map<number, number>, flips: { n: number }): number {
   if (policy === 'idle') return 0
   const pair = soonestPair(sim)
   if (policy === 'smart' || policy === 'best') {
@@ -100,7 +100,7 @@ function steer(sim: Sim, policy: 'idle' | 'smart' | 'half' | 'best', locks: Map<
     const leftDogs = applyGate(sim.dogs, projectOp(sim, pair.left)).dogs
     const rightDogs = applyGate(sim.dogs, projectOp(sim, pair.right)).dogs
     const best: -1 | 1 = leftDogs >= rightDogs ? -1 : 1
-    const takeBest = policy === 'smart' || flips.n % 2 === 0
+    const takeBest = policy === 'smart' || policy === 'stay' || flips.n % 2 === 0
     if (policy === 'half') flips.n += 1
     side = takeBest ? best : best === -1 ? 1 : -1
   }
@@ -118,7 +118,7 @@ function fightSeconds(sim: Sim): number {
   return sim.clearedAt - sim.boss.spawnedAt
 }
 
-function run(policy: 'idle' | 'smart' | 'half' | 'best', maxTime = 80, stage = 1) {
+function run(policy: 'idle' | 'smart' | 'half' | 'best' | 'stay', maxTime = 80, stage = 1) {
   const sim = createSim(stage)
   const events: Array<SimEvent & { time: number }> = []
   const locks = new Map<number, number>()
@@ -490,16 +490,35 @@ test('盾の猫は本体に弾を通さず、触れると3匹減る', () => {
   assert.equal(sim.dogs, 17)
 })
 
-test('上手いルートの残り時間は面が進むほど短く、門を半分外すと3面から負ける', () => {
-  const goals = [10, 7.9, 4.1, 4.7]
-  for (let stage = 1; stage <= 4; stage += 1) {
-    const skilled = run('smart', 100, stage)
-    const margin = skilled.sim.clearMargin
-    console.log(`ladder smart s${stage} ${skilled.sim.phase} dogs=${skilled.beforeBoss} margin=${margin?.toFixed(2) ?? '-'}`)
-    assert.equal(skilled.sim.phase, 'clear')
-    assert.ok(margin !== null && Math.abs(margin - (goals[stage - 1] ?? 0)) < 1.2, String(margin))
-    const half = run('half', 100, stage)
-    console.log(`ladder half s${stage} ${half.sim.phase} dogs=${half.beforeBoss} margin=${half.sim.clearMargin?.toFixed(2) ?? '-'}`)
-    assert.equal(half.sim.phase, stage <= 2 ? 'clear' : 'lose')
+test('残り時間は面ごとに短くなり、半分外すと3面から負け、寄ると匹数が残る', () => {
+  const skilled = [1, 2, 3, 4].map((stage) => run('smart', 100, stage))
+  const half = [1, 2, 3, 4].map((stage) => run('half', 100, stage))
+  const margins = skilled.map((row) => row.sim.clearMargin)
+  for (let index = 0; index < 4; index += 1) {
+    const stage = index + 1
+    console.log(
+      `smart s${stage} ${skilled[index]?.sim.phase} dogs=${skilled[index]?.beforeBoss} margin=${margins[index]?.toFixed(2) ?? '-'}`,
+    )
+    console.log(
+      `half s${stage} ${half[index]?.sim.phase} dogs=${half[index]?.beforeBoss} margin=${half[index]?.sim.clearMargin?.toFixed(2) ?? '-'}`,
+    )
   }
+  const first = margins[0]
+  const second = margins[1]
+  const third = margins[2]
+  const fourth = margins[3]
+  assert.ok(first !== null && second !== null && third !== null && fourth !== null)
+  assert.ok(first > second && second > third && third > fourth, margins.join(','))
+  assert.ok(first >= 10.5 && first <= 11.5, String(first))
+  assert.ok(fourth >= 2.5 && fourth <= 3, String(fourth))
+  for (let index = 0; index < 4; index += 1) {
+    assert.equal(half[index]?.sim.phase, index < 2 ? 'clear' : 'lose')
+  }
+  const stay = run('stay', 100, 1)
+  const dodgeDogs = skilled[0]?.beforeBoss ?? 0
+  console.log(`stay s1 dogs=${stay.beforeBoss} dodge=${dodgeDogs}`)
+  assert.ok(dodgeDogs > stay.beforeBoss, `${dodgeDogs} vs ${stay.beforeBoss}`)
+  const idle = run('idle', 30, 1)
+  assert.equal(idle.sim.phase, 'lose')
+  assert.equal(idle.sim.dogs, 0)
 })

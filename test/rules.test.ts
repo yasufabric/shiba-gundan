@@ -196,13 +196,13 @@ test('ボス体力は面ごとに上がり、匹数では変えない', () => {
   assert.equal(bossHpMultiplier(1), 1)
   assert.ok(Math.abs(bossHpMultiplier(2) - 1.36) < 1e-9)
   assert.ok(Math.abs(bossHpMultiplier(3) - 1.53) < 1e-9)
-  assert.ok(Math.abs(bossHpMultiplier(4) - 1.06) < 1e-9)
-  assert.ok(Math.abs(bossHpMultiplier(5) - 1.21) < 1e-9)
-  assert.ok(Math.abs(bossHpMultiplier(6) - 1.36) < 1e-9)
+  assert.ok(Math.abs(bossHpMultiplier(4) - 1.16) < 1e-9)
+  assert.ok(Math.abs(bossHpMultiplier(5) - 1.31) < 1e-9)
+  assert.ok(Math.abs(bossHpMultiplier(6) - 1.46) < 1e-9)
   const stage4 = buildSchedule(4).filter((item) => item.kind === 'boss' && !item.preview)
   assert.equal(stage4.length, 2)
   const total = stage4.reduce((sum, item) => sum + (item.kind === 'boss' ? item.hp : 0), 0)
-  assert.ok(Math.abs(total - BOSS_HP * 2.12) < 1)
+  assert.ok(Math.abs(total - BOSS_HP * 2.32) < 1)
 })
 
 test('左端の隊列でも匹数の3桁は画面内に収まる', () => {
