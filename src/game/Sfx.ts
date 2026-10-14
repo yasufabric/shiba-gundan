@@ -89,12 +89,48 @@ function noise(ctx: BaseAudioContext, out: AudioNode, t0: number, o: NoiseOpts):
   cleanup(src, [src, filter, gain])
 }
 
+/** 保存がちょうど '1' のときだけ消音。未設定や別の値では鳴らす。 */
 export function loadMuted(): boolean {
   try {
     return localStorage.getItem(MUTE_KEY) === '1'
   } catch {
     return false
   }
+}
+
+function armPlaybackSession(): void {
+  const nav = navigator as Navigator & { audioSession?: { type: string } }
+  if (!nav.audioSession) return
+  nav.audioSession.type = 'playback'
+}
+
+/** 無音の短い WAV。着信音オフでも Web Audio を鳴らすための <audio> 用。 */
+function silentWavUrl(): string {
+  const sampleRate = 8000
+  const samples = 800
+  const dataBytes = samples * 2
+  const buffer = new ArrayBuffer(44 + dataBytes)
+  const view = new DataView(buffer)
+  const write = (offset: number, text: string) => {
+    for (let i = 0; i < text.length; i += 1) view.setUint8(offset + i, text.charCodeAt(i))
+  }
+  write(0, 'RIFF')
+  view.setUint32(4, 36 + dataBytes, true)
+  write(8, 'WAVE')
+  write(12, 'fmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, 1, true)
+  view.setUint16(22, 1, true)
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, sampleRate * 2, true)
+  view.setUint16(32, 2, true)
+  view.setUint16(34, 16, true)
+  write(36, 'data')
+  view.setUint32(40, dataBytes, true)
+  let binary = ''
+  const bytes = new Uint8Array(buffer)
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return `data:audio/wav;base64,${btoa(binary)}`
 }
 
 export class Sfx {
@@ -105,16 +141,26 @@ export class Sfx {
   private catAt = 0
   private tickAt = 0
   private unlocked = false
+  private silence: HTMLAudioElement | null = null
   muted: boolean
 
   constructor(muted = false) {
     this.muted = muted
   }
 
+  /**
+   * 指を離した処理の中で同期的に呼ぶ。
+   * iOS は touchstart では解錠しないことがあり、running 以外なら次のタップでもう一度再開する。
+   */
   unlock(): void {
     this.unlocked = true
+    armPlaybackSession()
+    this.armSilence()
     const ctx = this.ensure()
-    if (ctx.state === 'suspended') void ctx.resume()
+    if (ctx.state !== 'running') {
+      void ctx.resume()
+      this.kick(ctx)
+    }
   }
 
   suspend(): void {
@@ -123,7 +169,9 @@ export class Sfx {
 
   resume(): void {
     if (!this.unlocked || !this.ctx) return
-    if (this.ctx.state === 'suspended') void this.ctx.resume()
+    armPlaybackSession()
+    if (this.ctx.state !== 'running') void this.ctx.resume()
+    if (this.silence && this.silence.paused) void this.silence.play().catch(() => undefined)
   }
 
   /** 曲が音を予約できるときだけ返す。ミュート中と、まだタップしていないときは null。 */
@@ -146,6 +194,7 @@ export class Sfx {
 
   private ensure(): AudioContext {
     if (!this.ctx) {
+      armPlaybackSession()
       const ctx = new AudioContext()
       const master = ctx.createGain()
       master.gain.value = this.muted ? 0 : 0.85
@@ -154,6 +203,34 @@ export class Sfx {
       this.master = master
     }
     return this.ctx
+  }
+
+  /** 無音バッファをジェスチャーの中で start し、Web Audio 自体を起こす。 */
+  private kick(ctx: AudioContext): void {
+    const buffer = ctx.createBuffer(1, 1, ctx.sampleRate)
+    const src = ctx.createBufferSource()
+    const gain = ctx.createGain()
+    src.buffer = buffer
+    gain.gain.value = 0
+    src.connect(gain)
+    gain.connect(ctx.destination)
+    src.start(0)
+  }
+
+  /** 着信音スイッチが消音でも、再生中の <audio> があると Web Audio が鳴る。 */
+  private armSilence(): void {
+    if (!this.silence) {
+      const audio = document.createElement('audio')
+      audio.loop = true
+      audio.preload = 'auto'
+      audio.setAttribute('playsinline', '')
+      audio.setAttribute('webkit-playsinline', '')
+      audio.src = silentWavUrl()
+      document.body.append(audio)
+      this.silence = audio
+    }
+    if (!this.silence.paused) return
+    void this.silence.play().catch(() => undefined)
   }
 
   private live(): { ctx: AudioContext; out: GainNode } | null {

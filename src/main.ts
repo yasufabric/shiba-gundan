@@ -7,8 +7,6 @@ function must<T extends HTMLElement>(id: string): T {
   return el as T
 }
 
-lockTouch()
-
 const stage: Stage = {
   canvas: must<HTMLCanvasElement>('game'),
   frame: must('frame'),
@@ -17,4 +15,10 @@ const stage: Stage = {
   live: must('live'),
 }
 
-new Game(stage).start()
+const game = new Game(stage)
+// touchend の preventDefault より先に解錠する。iOS は touchstart では音を開かない。
+const unlock = () => game.unlockAudio()
+document.addEventListener('touchend', unlock, { capture: true })
+document.addEventListener('pointerup', unlock, { capture: true })
+lockTouch()
+game.start()
